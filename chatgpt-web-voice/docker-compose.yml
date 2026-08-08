@@ -1,0 +1,15 @@
+services:
+  chatgpt-web-voice:
+    image: ghcr.io/space3044/chatgpt-web-voice:main
+    pull_policy: always
+    container_name: chatgpt-web-voice
+    network_mode: host
+    mem_limit: 256m
+    environment:
+      VOICE_AUTH_USERNAME: ""
+      VOICE_AUTH_PASSWORD: ""
+      VOICE_TOKEN_ENCRYPTION_KEY: ""
+      VOICE_TLS: "false"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

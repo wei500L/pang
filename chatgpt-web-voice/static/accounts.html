@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>账号池 · Voice Gateway</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2310a37f'/%3E%3Cpath d='M16 34h8l4-14 8 27 5-18h7' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <script>
+    (function () {
+      function readCSRFToken() {
+        try {
+          var part = (document.cookie || '').split(';').map(function (item) { return item.trim(); }).filter(function (item) {
+            return item.indexOf('voice_gateway_csrf=') === 0;
+          })[0] || '';
+          if (!part) return '';
+          return decodeURIComponent(part.split('=').slice(1).join('='));
+        } catch (e) {
+          return '';
+        }
+      }
+      function withCSRFHeaders(headers) {
+        headers = headers || {};
+        var token = readCSRFToken();
+        if (token && !headers['X-CSRF-Token'] && !headers['x-csrf-token']) headers['X-CSRF-Token'] = token;
+        return headers;
+      }
+      window.readCSRFToken = readCSRFToken;
+      window.withCSRFHeaders = withCSRFHeaders;
+
+      try {
+        var key = 'chatgpt_web_voice_theme_v1';
+        var theme = localStorage.getItem(key);
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/voice">
+      <span class="brand-mark">AP</span>
+      <span class="brand-title" data-i18n="brandTitle">账号池</span>
+    </a>
+    <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
+    <div class="top-actions">
+      <button type="button" class="header-chip" id="btnUiLocale" data-i18n-title="localeAria" data-i18n-aria="localeAria" title="语言" aria-label="语言">中文</button>
+      <button type="button" class="header-chip" id="btnUiTheme" data-i18n-title="themeAria" data-i18n-aria="themeAria" title="主题" aria-label="主题">浅色</button>
+      <a class="nav-link active" href="/accounts" aria-current="page" data-i18n="brandTitle">账号池</a>
+      <a class="nav-link" href="/keys" data-i18n="apiKeys">API 密钥</a>
+      <a class="nav-link" href="/sessions">会话记录</a>
+      <a class="nav-link" href="/voice" data-i18n="backVoice">语音通话</a>
+      <button type="button" class="nav-link" id="logoutButton" data-i18n="logout">退出</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="page-head">
+      <h1 data-i18n="title">账号池</h1>
+      <button type="button" class="btn btn-primary" id="addAccountButton"><span>＋</span><span data-i18n="addAccount">新增账户</span></button>
+    </div>
+
+    <div class="stats">
+      <span class="stat-pill"><strong id="totalCount">0</strong><span data-i18n="total">全部</span></span>
+      <span class="stat-pill"><strong id="availableCount">0</strong><span data-i18n="available">可用</span></span>
+      <span class="stat-pill"><strong id="disabledCount">0</strong><span data-i18n="disabled">禁用</span></span>
+    </div>
+
+    <section class="pool-panel">
+      <div class="toolbar">
+        <div class="search">
+          <input id="searchInput" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索 email、token、device ID…" autocomplete="off" />
+        </div>
+        <button type="button" class="btn" id="refreshButton" data-i18n="refresh">刷新</button>
+      </div>
+      <div id="tableWrap" class="table-wrap">
+        <table class="accounts-table">
+          <thead>
+            <tr>
+              <th class="col-account" data-i18n="columnAccount">账户</th>
+              <th class="col-token" data-i18n="columnToken">Token</th>
+              <th class="col-route" data-i18n="columnRoute">路由</th>
+              <th class="col-status" data-i18n="columnStatus">状态</th>
+              <th class="col-expiry" data-i18n="columnExpiry">过期</th>
+              <th class="col-used" data-i18n="columnLastUsed">最近使用</th>
+              <th class="col-actions" data-i18n="columnActions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="accountRows"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty">
+        <strong id="emptyTitle" data-i18n="emptyTitle">暂无账户</strong>
+        <span id="emptyText" data-i18n="emptyText">点击右上角新增账户</span>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="accountDialog">
+    <form id="accountForm" method="dialog">
+      <div class="dialog-head">
+        <h2 id="dialogTitle">新增账户</h2>
+        <button type="button" class="dialog-close" id="dialogClose" aria-label="Close">×</button>
+      </div>
+      <div class="dialog-body">
+        <section class="form-section">
+          <div class="form-section-title" data-i18n="sectionBasic">基本信息</div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="emailInput" data-i18n="emailLabel">邮箱</label>
+              <input id="emailInput" type="email" maxlength="320" autocomplete="off" placeholder="you@example.com" />
+            </div>
+            <div class="field">
+              <label for="statusInput" data-i18n="statusLabel">状态</label>
+              <select id="statusInput">
+                <option value="正常" data-i18n="statusAvailable">正常</option>
+                <option value="禁用" data-i18n="statusDisabled">禁用</option>
+              </select>
+            </div>
+          </div>
+        </section>
+        <section class="form-section">
+          <div class="form-section-title" data-i18n="sectionSecrets">凭证</div>
+          <div class="field-grid">
+            <div class="field full">
+              <label for="accessTokenInput" data-i18n="accessTokenLabel">Access token</label>
+              <div class="field-control">
+                <input id="accessTokenInput" type="password" autocomplete="new-password" />
+                <button type="button" class="clear-action" id="clearAccessToken" data-i18n="clearAccess" aria-pressed="false">清空</button>
+              </div>
+              <span id="accessTokenHint" class="field-hint"></span>
+            </div>
+          </div>
+        </section>
+        <section class="form-section">
+          <div class="form-section-title" data-i18n="sectionRoute">路由</div>
+          <div class="field-grid">
+            <div class="field full">
+              <label for="proxyInput" data-i18n="proxyLabel">Proxy</label>
+              <div class="field-control">
+                <input id="proxyInput" type="password" maxlength="4096" autocomplete="new-password" placeholder="http://user:pass@host:port" />
+                <button type="button" class="clear-action" id="clearProxy" data-i18n="clearProxy" aria-pressed="false">清空</button>
+              </div>
+              <span id="proxyHint" class="field-hint"></span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="dialog-foot">
+        <span id="formMessage" class="form-message" role="alert" aria-live="polite"></span>
+        <div class="dialog-actions">
+          <button type="button" class="btn" id="cancelButton" data-i18n="cancel">取消</button>
+          <button type="submit" class="btn btn-primary" id="saveButton" data-i18n="save">保存账户</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+
+  <script>
+    (function () {
+      'use strict';
+
+      var accounts = [];
+      var stats = { total: 0, available: 0, disabled: 0 };
+      var editingID = 0;
+      var localeKey = 'chatgpt_web_voice_ui_locale_v1';
+      var themeKey = 'chatgpt_web_voice_theme_v1';
+      var locale = 'zh';
+      var theme = 'light';
+      var toastTimer = 0;
+
+      var I18N = {
+        zh: {
+          pageTitle: '账号池 · Voice Gateway',
+          brandTitle: '账号池',
+          apiKeys: 'API 密钥',
+          backVoice: '语音通话',
+          logout: '退出',
+          title: '账号池',
+          addAccount: '新增账户',
+          total: '全部',
+          available: '可用',
+          disabled: '禁用',
+          searchPlaceholder: '搜索 email、token、device ID…',
+          refresh: '刷新',
+          columnAccount: '账户',
+          columnToken: 'Token',
+          columnRoute: '路由',
+          columnStatus: '状态',
+          columnExpiry: '过期',
+          columnLastUsed: '最近使用',
+          columnActions: '操作',
+          check: '探测',
+          checking: '探测中…',
+          probeAlive: '存活 · HTTP {code}',
+          probeUnauthorized: '失效 · 已禁用 · HTTP {code}',
+          probeUnknown: '未知 · HTTP {code} · {detail}',
+          probeTimeoutEnvironment: '上游超时。请检查当前进程的 HTTP_PROXY/HTTPS_PROXY/NO_PROXY，或给该账号单独配置 proxy。',
+          probeTimeoutProxy: '上游超时（经账号 proxy）。请检查 proxy 是否可达。',
+          probeNetwork: '探测失败：{detail}',
+          tokenExpired: '已过期',
+          tokenExpiresIn: '剩余 {value}',
+          tokenNoExp: '无 exp',
+          tokenNotJWT: '非 JWT',
+          sectionBasic: '基本信息',
+          sectionSecrets: '凭证',
+          sectionRoute: '路由',
+          emailLabel: '邮箱',
+          accessTokenLabel: 'Access token',
+          proxyLabel: 'Proxy',
+          proxyDirect: '自动（环境代理/直连）',
+          accountId: 'ID {id}',
+
+          emptyTitle: '暂无账户',
+          emptyText: '点击右上角新增账户',
+          noResultsTitle: '没有匹配的账户',
+          noResultsText: '换个关键词试试',
+          statusLabel: '状态',
+          statusAvailable: '正常',
+          statusDisabled: '禁用',
+          clearAccess: '清空',
+          clearProxy: '清空',
+          clearAccessDone: '将清空',
+          clearProxyDone: '将清空',
+          cancel: '取消',
+          save: '保存账户',
+          createTitle: '新增账户',
+          createDescription: '',
+          editTitle: '编辑账户',
+          editDescription: '',
+          accessRequired: 'Access token 必填',
+          accessOptional: '可选。填写后将覆盖现有值',
+          accessKeep: '可选。留空保持现有：{preview}',
+          proxyHint: '可选，例如 http://user:pass@host:port；留空则按进程环境代理规则访问',
+          proxyConfigured: '可选。当前：{preview}，留空保持不变',
+          proxyEmpty: '可选；留空则自动使用 HTTP_PROXY/HTTPS_PROXY/NO_PROXY，未配置时直连',
+          saved: '账户已保存',
+          deleted: '账户已删除',
+          enabledToast: '账户已启用',
+          disabledToast: '账户已禁用',
+          loading: '加载中…',
+          loadFailed: '无法加载账号池',
+          sessionExpired: '登录已失效',
+          edit: '编辑',
+          enable: '启用',
+          disable: '禁用',
+          delete: '删除',
+          proxyNone: '自动（环境代理/直连）',
+          never: '从未使用',
+          availableBadge: '可用',
+          disabledBadge: '禁用',
+          confirmDelete: '确认删除账户“{name}”？此操作会永久移除 SQLite 中的 credential。',
+          poolHealthy: '{available}/{total}',
+          saving: '正在保存…',
+          themeLight: '浅色',
+          themeDark: '深色',
+          themeAria: '主题',
+          localeAria: '语言'
+        },
+        en: {
+          pageTitle: 'Account Pool · Voice Gateway',
+          brandTitle: 'Accounts',
+          apiKeys: 'API Keys',
+          backVoice: 'Voice',
+          logout: 'Log out',
+          title: 'Accounts',
+          addAccount: 'Add account',
+          total: 'All',
+          available: 'Available',
+          disabled: 'Disabled',
+          searchPlaceholder: 'Search email, token preview, proxy…',
+          refresh: 'Refresh',
+          columnAccount: 'Account',
+          columnToken: 'Token',
+          columnRoute: 'Route',
+          columnStatus: 'Status',
+          columnExpiry: 'Expiry',
+          columnLastUsed: 'Last used',
+          columnActions: 'Actions',
+          check: 'Check',
+          checking: 'Checking…',
+          probeAlive: 'Alive · HTTP {code}',
+          probeUnauthorized: 'Invalid · disabled · HTTP {code}',
+          probeUnknown: 'Unknown · HTTP {code} · {detail}',
+          probeTimeoutEnvironment: 'Upstream timed out. Check this process\'s HTTP_PROXY/HTTPS_PROXY/NO_PROXY, or set a per-account proxy and retry.',
+          probeTimeoutProxy: 'Upstream timed out via the account proxy. Check that the proxy is reachable.',
+          probeNetwork: 'Probe failed: {detail}',
+          tokenExpired: 'Expired',
+          tokenExpiresIn: '{value} left',
+          tokenNoExp: 'No exp',
+          tokenNotJWT: 'Not JWT',
+          sectionBasic: 'Basics',
+          sectionSecrets: 'Credentials',
+          sectionRoute: 'Routing',
+          emailLabel: 'Email',
+          accessTokenLabel: 'Access token',
+          proxyLabel: 'Proxy',
+          proxyDirect: 'Auto (env proxy/direct)',
+          accountId: 'ID {id}',
+
+          emptyTitle: 'No accounts',
+          emptyText: 'Add an account to get started',
+          noResultsTitle: 'No matching accounts',
+          noResultsText: 'Try a different search term.',
+          statusLabel: 'Status',
+          statusAvailable: 'Available',
+          statusDisabled: 'Disabled',
+          clearAccess: 'Clear',
+          clearProxy: 'Clear',
+          clearAccessDone: 'Will clear',
+          clearProxyDone: 'Will clear',
+          cancel: 'Cancel',
+          save: 'Save account',
+          createTitle: 'Add account',
+          createDescription: '',
+          editTitle: 'Edit account',
+          editDescription: '',
+          accessRequired: 'Access token is required',
+          accessOptional: 'Optional. Leave blank to keep the current value',
+          accessKeep: 'Optional. Leave blank to keep: {preview}',
+          proxyHint: 'Optional, e.g. http://user:pass@host:port. Leave blank to follow the process proxy environment.',
+          proxyConfigured: 'Optional. Current: {preview} — leave blank to keep',
+          proxyEmpty: 'Optional. Leave blank to use HTTP_PROXY/HTTPS_PROXY/NO_PROXY, or direct when unset.',
+          saved: 'Account saved',
+          deleted: 'Account deleted',
+          enabledToast: 'Account enabled',
+          disabledToast: 'Account disabled',
+          loading: 'Loading…',
+          loadFailed: 'Could not load the account pool',
+          sessionExpired: 'Login expired',
+          edit: 'Edit',
+          enable: 'Enable',
+          disable: 'Disable',
+          delete: 'Delete',
+          proxyNone: 'Auto (env proxy/direct)',
+          never: 'Never',
+          availableBadge: 'Available',
+          disabledBadge: 'Disabled',
+          confirmDelete: 'Delete account “{name}”? This permanently removes its credential from SQLite.',
+          poolHealthy: '{available}/{total} available',
+          saving: 'Saving…',
+          themeLight: 'Light',
+          themeDark: 'Dark',
+          themeAria: 'Theme',
+          localeAria: 'Language'
+        }
+      };
+
+      var rows = document.getElementById('accountRows');
+      var tableWrap = document.getElementById('tableWrap');
+      var emptyState = document.getElementById('emptyState');
+      var emptyTitle = document.getElementById('emptyTitle');
+      var emptyText = document.getElementById('emptyText');
+      var searchInput = document.getElementById('searchInput');
+      var dialog = document.getElementById('accountDialog');
+      var form = document.getElementById('accountForm');
+      var dialogTitle = document.getElementById('dialogTitle');
+      var emailInput = document.getElementById('emailInput');
+      var statusInput = document.getElementById('statusInput');
+      var accessTokenInput = document.getElementById('accessTokenInput');
+      var proxyInput = document.getElementById('proxyInput');
+      var clearAccessToken = document.getElementById('clearAccessToken');
+      var clearProxy = document.getElementById('clearProxy');
+      var accessTokenHint = document.getElementById('accessTokenHint');
+      var proxyHint = document.getElementById('proxyHint');
+      var formMessage = document.getElementById('formMessage');
+      var saveButton = document.getElementById('saveButton');
+      var toastElement = document.getElementById('toast');
+      var clearAccessActive = false;
+      var clearProxyActive = false;
+
+      function t(key, values) {
+        var text = (I18N[locale] && I18N[locale][key]) || I18N.zh[key] || key;
+        Object.keys(values || {}).forEach(function (name) {
+          text = text.replaceAll('{' + name + '}', String(values[name]));
+        });
+        return text;
+      }
+
+      function setClearAction(button, active, idleKey, activeKey) {
+        if (!button) return;
+        button.classList.toggle('active', !!active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        button.textContent = t(active ? activeKey : idleKey);
+      }
+
+      function resetClearActions() {
+        clearAccessActive = false;
+        clearProxyActive = false;
+        setClearAction(clearAccessToken, false, 'clearAccess', 'clearAccessDone');
+        setClearAction(clearProxy, false, 'clearProxy', 'clearProxyDone');
+      }
+
+      function bindClearAction(button, getActive, setActive, input, idleKey, activeKey) {
+        if (!button) return;
+        button.onclick = function () {
+          if (editingID > 0) {
+            var next = !getActive();
+            setActive(next);
+            if (next && input) input.value = '';
+            setClearAction(button, next, idleKey, activeKey);
+            return;
+          }
+          if (input) input.value = '';
+          setActive(false);
+          setClearAction(button, false, idleKey, activeKey);
+        };
+        if (input) {
+          input.addEventListener('input', function () {
+            if (!input.value || !getActive()) return;
+            setActive(false);
+            setClearAction(button, false, idleKey, activeKey);
+          });
+        }
+      }
+
+      function updateLocaleThemeButtons() {
+        var btnLocale = document.getElementById('btnUiLocale');
+        var btnTheme = document.getElementById('btnUiTheme');
+        if (btnLocale) {
+          btnLocale.textContent = locale === 'en' ? 'EN' : '中文';
+          btnLocale.setAttribute('title', t('localeAria'));
+          btnLocale.setAttribute('aria-label', t('localeAria'));
+        }
+        if (btnTheme) {
+          btnTheme.textContent = theme === 'dark' ? t('themeDark') : t('themeLight');
+          btnTheme.setAttribute('title', t('themeAria'));
+          btnTheme.setAttribute('aria-label', t('themeAria'));
+        }
+      }
+
+      function applyLocale(nextLocale) {
+        locale = nextLocale === 'en' ? 'en' : 'zh';
+        try { localStorage.setItem(localeKey, locale); } catch (_) {}
+        document.documentElement.lang = locale === 'en' ? 'en' : 'zh-CN';
+        document.title = t('pageTitle');
+        document.querySelectorAll('[data-i18n]').forEach(function (element) {
+          element.textContent = t(element.getAttribute('data-i18n'));
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function (element) {
+          element.placeholder = t(element.getAttribute('data-i18n-placeholder'));
+        });
+        document.querySelectorAll('[data-i18n-title]').forEach(function (element) {
+          element.setAttribute('title', t(element.getAttribute('data-i18n-title')));
+        });
+        document.querySelectorAll('[data-i18n-aria]').forEach(function (element) {
+          element.setAttribute('aria-label', t(element.getAttribute('data-i18n-aria')));
+        });
+        updateLocaleThemeButtons();
+        setClearAction(clearAccessToken, clearAccessActive, 'clearAccess', 'clearAccessDone');
+        setClearAction(clearProxy, clearProxyActive, 'clearProxy', 'clearProxyDone');
+        render();
+        if (dialog.open) updateDialogCopy();
+      }
+
+      function applyTheme(nextTheme, persist) {
+        theme = nextTheme === 'dark' ? 'dark' : 'light';
+        if (persist !== false) {
+          try { localStorage.setItem(themeKey, theme); } catch (_) {}
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        updateLocaleThemeButtons();
+      }
+
+      function escapeHTML(value) {
+        return String(value == null ? '' : value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function formatDate(value) {
+        if (!value) return t('never');
+        var normalized = value;
+        if (/^\d{4}-\d{2}-\d{2} /.test(value)) normalized = value.replace(' ', 'T') + 'Z';
+        var date = new Date(normalized);
+        if (Number.isNaN(date.getTime())) return value;
+        return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        }).format(date);
+      }
+
+      function formatDuration(seconds) {
+        var total = Math.abs(Number(seconds) || 0);
+        var days = Math.floor(total / 86400);
+        var hours = Math.floor((total % 86400) / 3600);
+        var minutes = Math.floor((total % 3600) / 60);
+        if (days > 0) {
+          return locale === 'en'
+            ? (days + 'd ' + hours + 'h')
+            : (days + ' 天 ' + hours + ' 小时');
+        }
+        if (hours > 0) {
+          return locale === 'en'
+            ? (hours + 'h ' + minutes + 'm')
+            : (hours + ' 小时 ' + minutes + ' 分');
+        }
+        if (minutes > 0) {
+          return locale === 'en' ? (minutes + 'm') : (minutes + ' 分钟');
+        }
+        return locale === 'en' ? '<1m' : '不到 1 分钟';
+      }
+
+      function formatExpiry(account) {
+        if (!account.token_has_exp) {
+          return { text: t('tokenNotJWT'), className: '', title: '' };
+        }
+        var expDate = account.token_exp
+          ? new Date(account.token_exp * 1000)
+          : null;
+        var title = expDate && !Number.isNaN(expDate.getTime())
+          ? expDate.toISOString()
+          : '';
+        if (account.token_expired) {
+          return {
+            text: t('tokenExpired') + (account.expires_in_seconds != null
+              ? ' · ' + formatDuration(account.expires_in_seconds)
+              : ''),
+            className: 'danger',
+            title: title
+          };
+        }
+        if (account.expires_in_seconds == null) {
+          return { text: t('tokenNoExp'), className: '', title: title };
+        }
+        var soon = account.expires_in_seconds < 24 * 3600;
+        return {
+          text: t('tokenExpiresIn', { value: formatDuration(account.expires_in_seconds) }),
+          className: soon ? 'warn' : 'on',
+          title: title
+        };
+      }
+
+      function accountName(account) {
+        return account.email || ('Account #' + account.id);
+      }
+
+      async function apiFetch(url, options) {
+        options = options || {};
+        options.credentials = 'same-origin';
+        options.headers = options.headers || {};
+        var method = String(options.method || 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          if (!options.headers['X-CSRF-Token'] && !options.headers['x-csrf-token']) {
+            var csrf = '';
+            try {
+              csrf = (document.cookie || '').split(';').map(function (part) { return part.trim(); }).filter(function (part) {
+                return part.indexOf('voice_gateway_csrf=') === 0;
+              })[0] || '';
+              if (csrf) csrf = decodeURIComponent(csrf.split('=').slice(1).join('='));
+            } catch (e) {}
+            if (csrf) options.headers['X-CSRF-Token'] = csrf;
+          }
+        }
+        var response = await fetch(url, options);
+        var data = {};
+        try { data = await response.json(); } catch (_) {}
+        if (response.status === 401) {
+          window.location.replace('/login');
+          throw new Error(t('sessionExpired'));
+        }
+        if (!response.ok) {
+          throw new Error((data.detail && data.detail.error) || ('HTTP ' + response.status));
+        }
+        return data;
+      }
+
+      async function loadAccounts(showLoadingToast) {
+        if (showLoadingToast) showToast(t('loading'));
+        try {
+          var data = await apiFetch('/api/accounts');
+          accounts = Array.isArray(data.accounts) ? data.accounts : [];
+          stats = data.stats || { total: accounts.length, available: 0, disabled: 0 };
+          render();
+        } catch (error) {
+          showToast(t('loadFailed') + ': ' + error.message);
+        }
+      }
+
+      function render() {
+        document.getElementById('totalCount').textContent = stats.total || 0;
+        document.getElementById('availableCount').textContent = stats.available || 0;
+        document.getElementById('disabledCount').textContent = stats.disabled || 0;
+
+        var query = searchInput.value.trim().toLowerCase();
+        var filtered = accounts.filter(function (account) {
+          if (!query) return true;
+          return [
+            account.email,
+            account.access_token_preview,
+            account.proxy_preview,
+            account.status
+          ].join(' ').toLowerCase().includes(query);
+        });
+        rows.innerHTML = filtered.map(renderRow).join('');
+        var isEmpty = filtered.length === 0;
+        tableWrap.style.display = isEmpty ? 'none' : 'block';
+        emptyState.classList.toggle('show', isEmpty);
+        emptyTitle.textContent = accounts.length === 0 ? t('emptyTitle') : t('noResultsTitle');
+        emptyText.textContent = accounts.length === 0 ? t('emptyText') : t('noResultsText');
+      }
+
+
+      function shortToken(value) {
+        var text = String(value || '').trim();
+        if (!text) return '—';
+        if (text.length <= 22) return text;
+        return text.slice(0, 10) + '…' + text.slice(-8);
+      }
+
+
+      function shortProxy(value) {
+        var text = String(value || '').trim();
+        if (!text) return t('proxyDirect');
+        if (text.length <= 24) return text;
+        return text.slice(0, 14) + '…' + text.slice(-6);
+      }
+
+      function renderRow(account) {
+        var statusClass = account.available ? '' : 'disabled';
+        var tokenPreview = shortToken(account.access_token_preview);
+        var route = account.has_proxy ? shortProxy(account.proxy_preview) : t('proxyDirect');
+        var expiry = formatExpiry(account);
+        return '<tr class="' + statusClass + '" data-id="' + account.id + '">' +
+          '<td data-label="' + escapeHTML(t('columnAccount')) + '">' +
+            '<div class="cell-stack">' +
+              '<span class="cell-title" title="' + escapeHTML(accountName(account)) + '">' + escapeHTML(accountName(account)) + '</span>' +
+              '<span class="cell-meta mono">' + escapeHTML(t('accountId', { id: account.id })) + '</span>' +
+            '</div>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnToken')) + '">' +
+            '<div class="cell-stack">' +
+              '<span class="token-chip mono" title="' + escapeHTML(account.access_token_preview || '') + '">' + escapeHTML(tokenPreview) + '</span>' +
+            '</div>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnRoute')) + '">' +
+            '<div class="cell-stack">' +
+              '<span class="route-chip mono" title="' + escapeHTML(account.proxy_preview || t('proxyDirect')) + '">' + escapeHTML(route) + '</span>' +
+            '</div>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnStatus')) + '">' +
+            '<span class="badge ' + statusClass + '">' + escapeHTML(account.available ? t('availableBadge') : t('disabledBadge')) + '</span>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnExpiry')) + '">' +
+            '<span class="meta-tag ' + escapeHTML(expiry.className) + '" title="' + escapeHTML(expiry.title) + '">' + escapeHTML(expiry.text) + '</span>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnLastUsed')) + '">' +
+            '<span class="time-main">' + escapeHTML(formatDate(account.last_used_at)) + '</span>' +
+          '</td>' +
+          '<td data-label="' + escapeHTML(t('columnActions')) + '">' +
+            '<div class="actions">' +
+              '<button type="button" class="btn btn-small" data-action="check" data-id="' + account.id + '">' + escapeHTML(t('check')) + '</button>' +
+              '<button type="button" class="btn btn-small" data-action="edit" data-id="' + account.id + '">' + escapeHTML(t('edit')) + '</button>' +
+              '<button type="button" class="btn btn-small" data-action="toggle" data-id="' + account.id + '">' + escapeHTML(account.available ? t('disable') : t('enable')) + '</button>' +
+              '<button type="button" class="btn btn-small btn-danger" data-action="delete" data-id="' + account.id + '">' + escapeHTML(t('delete')) + '</button>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+      }
+
+      function openAccountDialog(account) {
+        var editing = !!(account && account.id);
+        editingID = editing ? account.id : 0;
+        form.reset();
+        emailInput.value = editing ? (account.email || '') : '';
+        statusInput.value = editing ? (account.available ? '正常' : '禁用') : '正常';
+        accessTokenInput.required = !editing;
+        resetClearActions();
+        formMessage.textContent = '';
+        updateDialogCopy(editing ? account : null);
+        dialog.showModal();
+        setTimeout(function () { emailInput.focus(); }, 50);
+      }
+
+      function openCreateDialog() {
+        openAccountDialog(null);
+      }
+
+      function openEditDialog(account) {
+        openAccountDialog(account);
+      }
+
+      function updateDialogCopy(account) {
+        account = account || accounts.find(function (item) { return item.id === editingID; }) || null;
+        var editing = editingID > 0;
+        dialogTitle.textContent = t(editing ? 'editTitle' : 'createTitle');
+        saveButton.textContent = t('save');
+        accessTokenInput.placeholder = '';
+        proxyInput.placeholder = 'http://user:pass@host:port';
+        if (editing) {
+          accessTokenHint.textContent = t('accessKeep', {
+            preview: account && account.access_token_preview ? account.access_token_preview : '••••••'
+          });
+          proxyHint.textContent = account && account.has_proxy
+            ? t('proxyConfigured', { preview: account.proxy_preview })
+            : t('proxyEmpty');
+        } else {
+          accessTokenHint.textContent = t('accessRequired');
+          proxyHint.textContent = t('proxyHint');
+        }
+      }
+
+      function clearSecretInputs() {
+        accessTokenInput.value = '';
+        proxyInput.value = '';
+        resetClearActions();
+      }
+
+      async function saveAccount(event) {
+        event.preventDefault();
+        formMessage.textContent = '';
+        var accessToken = accessTokenInput.value.trim();
+        if (!editingID && !accessToken) {
+          formMessage.textContent = t('accessRequired');
+          accessTokenInput.focus();
+          return;
+        }
+        if (editingID && clearAccessActive && !accessToken) {
+          formMessage.textContent = t('accessRequired');
+          accessTokenInput.focus();
+          return;
+        }
+        var payload = {
+          email: emailInput.value.trim(),
+          status: statusInput.value,
+          disabled: statusInput.value === '禁用'
+        };
+        // access_token cannot be empty on the server; omit when blank to keep existing.
+        if (accessToken) payload.access_token = accessToken;
+        if (proxyInput.value.trim()) payload.proxy = proxyInput.value.trim();
+        else if (editingID && clearProxyActive) payload.proxy = '';
+
+        saveButton.disabled = true;
+        saveButton.textContent = t('saving');
+        try {
+          await apiFetch(editingID ? '/api/accounts/' + editingID : '/api/accounts', {
+            method: editingID ? 'PUT' : 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          dialog.close();
+          showToast(t('saved'));
+          await loadAccounts(false);
+        } catch (error) {
+          formMessage.textContent = error.message;
+        } finally {
+          saveButton.disabled = false;
+          saveButton.textContent = t('save');
+        }
+      }
+
+      async function toggleAccount(account) {
+        var enable = !account.available;
+        try {
+          await apiFetch('/api/accounts/' + account.id, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              email: account.email,
+              status: enable ? '正常' : '禁用',
+              disabled: !enable
+            })
+          });
+          showToast(t(enable ? 'enabledToast' : 'disabledToast'));
+          await loadAccounts(false);
+        } catch (error) {
+          showToast(error.message);
+        }
+      }
+
+      function formatProbeMessage(probe) {
+        var code = probe.status_code || 0;
+        var detail = String(probe.detail || '').trim();
+        if (probe.status === 'alive') {
+          return { message: t('probeAlive', { code: code }), sticky: false };
+        }
+        if (probe.status === 'unauthorized') {
+          return { message: t('probeUnauthorized', { code: code }), sticky: false };
+        }
+        var lower = detail.toLowerCase();
+        if (lower.indexOf('timeout') >= 0 || lower.indexOf('deadline exceeded') >= 0) {
+          if (lower.indexOf('account proxy') >= 0 || lower.indexOf('via account proxy') >= 0) {
+            return { message: t('probeTimeoutProxy'), sticky: true };
+          }
+          return { message: t('probeTimeoutEnvironment'), sticky: true };
+        }
+        return {
+          message: t('probeUnknown', { code: code || '—', detail: detail || probe.status || 'unknown' }),
+          sticky: !!detail
+        };
+      }
+
+      async function checkAccount(account, button) {
+        if (button) {
+          button.disabled = true;
+          button.textContent = t('checking');
+        }
+        try {
+          var data = await apiFetch('/api/accounts/' + account.id + '/check', { method: 'POST' });
+          var probe = data.probe || {};
+          var formatted = formatProbeMessage(probe);
+          showToast(formatted.message, formatted.sticky ? 8000 : 3200);
+          await loadAccounts(false);
+        } catch (error) {
+          showToast(t('probeNetwork', { detail: error.message }), 8000);
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = t('check');
+          }
+        }
+      }
+
+      async function deleteAccount(account) {
+        if (!window.confirm(t('confirmDelete', { name: accountName(account) }))) return;
+        try {
+          await apiFetch('/api/accounts/' + account.id, { method: 'DELETE' });
+          showToast(t('deleted'));
+          await loadAccounts(false);
+        } catch (error) {
+          showToast(error.message);
+        }
+      }
+
+      function showToast(message, durationMs) {
+        clearTimeout(toastTimer);
+        toastElement.textContent = message;
+        toastElement.classList.add('show');
+        var ms = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 2400;
+        toastTimer = setTimeout(function () { toastElement.classList.remove('show'); }, ms);
+      }
+
+      document.getElementById('addAccountButton').onclick = openCreateDialog;
+      document.getElementById('refreshButton').onclick = function () { loadAccounts(true); };
+      document.getElementById('dialogClose').onclick = function () { dialog.close(); };
+      document.getElementById('cancelButton').onclick = function () { dialog.close(); };
+      bindClearAction(
+        clearAccessToken,
+        function () { return clearAccessActive; },
+        function (v) { clearAccessActive = v; },
+        accessTokenInput,
+        'clearAccess',
+        'clearAccessDone'
+      );
+      bindClearAction(
+        clearProxy,
+        function () { return clearProxyActive; },
+        function (v) { clearProxyActive = v; },
+        proxyInput,
+        'clearProxy',
+        'clearProxyDone'
+      );
+      document.getElementById('logoutButton').onclick = async function () {
+        try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: withCSRFHeaders({}) }); }
+        finally { window.location.replace('/login'); }
+      };
+      form.addEventListener('submit', saveAccount);
+      searchInput.addEventListener('input', render);
+      rows.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-action]');
+        if (!button) return;
+        var id = Number(button.getAttribute('data-id'));
+        var account = accounts.find(function (item) { return item.id === id; });
+        if (!account) return;
+        var action = button.getAttribute('data-action');
+        if (action === 'check') checkAccount(account, button);
+        if (action === 'edit') openEditDialog(account);
+        if (action === 'toggle') toggleAccount(account);
+        if (action === 'delete') deleteAccount(account);
+      });
+      dialog.addEventListener('click', function (event) {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener('close', clearSecretInputs);
+      var btnUiLocale = document.getElementById('btnUiLocale');
+      var btnUiTheme = document.getElementById('btnUiTheme');
+      if (btnUiLocale) {
+        btnUiLocale.onclick = function () {
+          applyLocale(locale === 'en' ? 'zh' : 'en');
+        };
+      }
+      if (btnUiTheme) {
+        btnUiTheme.onclick = function () {
+          applyTheme(theme === 'dark' ? 'light' : 'dark', true);
+        };
+      }
+
+      try { locale = localStorage.getItem(localeKey) || 'zh'; } catch (_) {}
+      try {
+        var savedTheme = localStorage.getItem(themeKey);
+        if (savedTheme === 'light' || savedTheme === 'dark') theme = savedTheme;
+        else theme = document.documentElement.getAttribute('data-theme') || 'light';
+      } catch (_) {
+        theme = document.documentElement.getAttribute('data-theme') || 'light';
+      }
+      applyTheme(theme, false);
+      applyLocale(locale);
+      loadAccounts(false);
+    })();
+  </script>
+</body>
+</html>

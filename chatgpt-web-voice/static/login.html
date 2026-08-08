@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 · Voice Gateway</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2310a37f'/%3E%3Cpath d='M16 34h8l4-14 8 27 5-18h7' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <script>
+    (function () {
+      try {
+        var key = 'chatgpt_web_voice_theme_v1';
+        var theme = localStorage.getItem(key);
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body class="login-page">
+  <div class="page-toggles">
+    <button type="button" id="btnUiLocale" title="语言" aria-label="语言">中文</button>
+    <button type="button" id="btnUiTheme" title="主题" aria-label="主题">浅色</button>
+  </div>
+  <main class="shell">
+    <div class="brand-row">
+      <span class="brand-mark">V</span>
+      <span class="brand-title">Voice Gateway</span>
+    </div>
+    <h1 id="loginHeading">登录</h1>
+    <form id="loginForm" novalidate>
+      <label for="username" id="usernameLabel">用户名</label>
+      <input id="username" name="username" type="text" autocomplete="username" required autofocus />
+
+      <label for="password" id="passwordLabel">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+      <div class="remember-row">
+        <label class="remember-option" for="remember">
+          <input id="remember" name="remember" type="checkbox" />
+          <span id="rememberLabel">记住登录状态</span>
+        </label>
+      </div>
+
+      <button id="loginButton" type="submit">登录</button>
+      <p id="message" class="message" role="alert" aria-live="polite"></p>
+    </form>
+    <p id="connectionNote" class="connection-note">当前连接未加密。局域网登录请启用 HTTPS。</p>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+      var form = document.getElementById('loginForm');
+      var button = document.getElementById('loginButton');
+      var message = document.getElementById('message');
+      var connectionNote = document.getElementById('connectionNote');
+      var remember = document.getElementById('remember');
+      var rememberLabel = document.getElementById('rememberLabel');
+      var themeKey = 'chatgpt_web_voice_theme_v1';
+      var localeKey = 'chatgpt_web_voice_ui_locale_v1';
+      var theme = 'light';
+      var locale = 'zh';
+      var btnUiLocale = document.getElementById('btnUiLocale');
+      var btnUiTheme = document.getElementById('btnUiTheme');
+
+      function updateToggleButtons() {
+        if (btnUiLocale) {
+          btnUiLocale.textContent = locale === 'en' ? 'EN' : '中文';
+          btnUiLocale.setAttribute('title', locale === 'en' ? 'Language' : '语言');
+          btnUiLocale.setAttribute('aria-label', locale === 'en' ? 'Language' : '语言');
+        }
+        if (btnUiTheme) {
+          btnUiTheme.textContent = theme === 'dark'
+            ? (locale === 'en' ? 'Dark' : '深色')
+            : (locale === 'en' ? 'Light' : '浅色');
+          btnUiTheme.setAttribute('title', locale === 'en' ? 'Theme' : '主题');
+          btnUiTheme.setAttribute('aria-label', locale === 'en' ? 'Theme' : '主题');
+        }
+        var heading = document.getElementById('loginHeading');
+        var usernameLabel = document.getElementById('usernameLabel');
+        var passwordLabel = document.getElementById('passwordLabel');
+        if (heading) heading.textContent = locale === 'en' ? 'Sign in' : '登录';
+        if (usernameLabel) usernameLabel.textContent = locale === 'en' ? 'Username' : '用户名';
+        if (passwordLabel) passwordLabel.textContent = locale === 'en' ? 'Password' : '密码';
+        if (rememberLabel) rememberLabel.textContent = locale === 'en' ? 'Remember me' : '记住登录状态';
+        if (button && !button.disabled) button.textContent = locale === 'en' ? 'Sign in' : '登录';
+        if (connectionNote) connectionNote.textContent = locale === 'en'
+          ? 'This connection is not encrypted. Use HTTPS on local networks.'
+          : '当前连接未加密。局域网登录请启用 HTTPS。';
+      }
+
+      function applyTheme(nextTheme, persist) {
+        theme = nextTheme === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        if (persist !== false) {
+          try { localStorage.setItem(themeKey, theme); } catch (_) {}
+        }
+        updateToggleButtons();
+      }
+
+      function applyLocale(nextLocale, persist) {
+        locale = nextLocale === 'en' ? 'en' : 'zh';
+        document.documentElement.lang = locale === 'en' ? 'en' : 'zh-CN';
+        if (persist !== false) {
+          try { localStorage.setItem(localeKey, locale); } catch (_) {}
+        }
+        updateToggleButtons();
+      }
+
+      try {
+        var savedTheme = localStorage.getItem(themeKey);
+        if (savedTheme === 'light' || savedTheme === 'dark') theme = savedTheme;
+        else theme = document.documentElement.getAttribute('data-theme') || 'light';
+      } catch (_) {
+        theme = document.documentElement.getAttribute('data-theme') || 'light';
+      }
+      try {
+        var savedLocale = localStorage.getItem(localeKey);
+        if (savedLocale === 'zh' || savedLocale === 'en') locale = savedLocale;
+      } catch (_) {}
+      applyTheme(theme, false);
+      applyLocale(locale, false);
+      if (btnUiLocale) {
+        btnUiLocale.addEventListener('click', function () {
+          applyLocale(locale === 'en' ? 'zh' : 'en', true);
+        });
+      }
+      if (btnUiTheme) {
+        btnUiTheme.addEventListener('click', function () {
+          applyTheme(theme === 'dark' ? 'light' : 'dark', true);
+        });
+      }
+
+      if (window.location.protocol !== 'https:' && !['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname)) {
+        connectionNote.classList.add('show');
+      }
+
+      form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        message.textContent = '';
+        var username = document.getElementById('username').value.trim();
+        var password = document.getElementById('password').value;
+        if (!username || !password) {
+          message.textContent = '请输入用户名和密码。';
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = locale === 'en' ? 'Signing in…' : '登录中…';
+        try {
+          var response = await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username: username, password: password, remember: !!(remember && remember.checked) })
+          });
+          var data = {};
+          try { data = await response.json(); } catch (_) {}
+          if (!response.ok) {
+            message.textContent = (data.detail && data.detail.error) || '登录失败，请检查用户名和密码。';
+            return;
+          }
+          window.location.replace('/voice');
+        } catch (_) {
+          message.textContent = '无法连接网关，请确认服务仍在运行。';
+        } finally {
+          button.disabled = false;
+          button.textContent = locale === 'en' ? 'Sign in' : '登录';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
