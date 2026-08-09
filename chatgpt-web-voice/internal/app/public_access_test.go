@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -208,7 +209,7 @@ func TestRateLimiterUsesCloudflareIPOnlyWhenTrusted(t *testing.T) {
 	}
 }
 
-func TestRecordingChunksUseIndependentRateLimitBucket(t *testing.T) {
+func TestBackgroundWritesUseIndependentRateLimitBuckets(t *testing.T) {
 	limiter := newPublicRateLimiter(config.Config{PublicWriteRate: 1})
 	if allowed, _ := limiter.allow(limiter.writes, "guest-ip", 1); !allowed {
 		t.Fatal("expected first general write to be allowed")
@@ -216,11 +217,55 @@ func TestRecordingChunksUseIndependentRateLimitBucket(t *testing.T) {
 	if allowed, _ := limiter.allow(limiter.writes, "guest-ip", 1); allowed {
 		t.Fatal("expected general write bucket to be exhausted")
 	}
-	if allowed, _ := limiter.allow(limiter.recordingChunks, "guest-ip", 60); !allowed {
+	if allowed, _ := limiter.allow(limiter.recordingChunks, "guest-ip", publicRecordingChunkLimit); !allowed {
 		t.Fatal("recording chunks must not consume the general write bucket")
+	}
+	if allowed, _ := limiter.allow(limiter.conversationWrites, "guest-ip", publicConversationWriteLimit); !allowed {
+		t.Fatal("conversation persistence must not consume the general write bucket")
 	}
 	req := httptest.NewRequest(http.MethodPut, "/api/recordings/rec_test/chunks/0", nil)
 	if !isRecordingChunkWrite(req) {
 		t.Fatal("recording chunk route was not classified separately")
+	}
+	conversationReq := httptest.NewRequest(http.MethodPost, "/api/conversations/cv_test/messages", nil)
+	if !isConversationWrite(conversationReq) {
+		t.Fatal("conversation message route was not classified separately")
+	}
+	controlReq := httptest.NewRequest(http.MethodPost, "/api/voice/session/release", nil)
+	if isConversationWrite(controlReq) {
+		t.Fatal("voice control writes must remain outside the conversation bucket")
+	}
+}
+
+func TestConversationWriteLimitDoesNotConsumeGeneralWriteCapacity(t *testing.T) {
+	limiter := newPublicRateLimiter(config.Config{PublicWriteRate: 1})
+	for attempt := 0; attempt < publicConversationWriteLimit; attempt++ {
+		if allowed, _ := limiter.allow(limiter.conversationWrites, "guest-ip", publicConversationWriteLimit); !allowed {
+			t.Fatalf("conversation write %d was limited early", attempt+1)
+		}
+	}
+	if allowed, _ := limiter.allow(limiter.conversationWrites, "guest-ip", publicConversationWriteLimit); allowed {
+		t.Fatal("conversation write bucket must remain bounded")
+	}
+	if allowed, _ := limiter.allow(limiter.writes, "guest-ip", 1); !allowed {
+		t.Fatal("conversation writes must not consume general control capacity")
+	}
+}
+
+func TestPublicRateBucketBoundsUnknownClientEntries(t *testing.T) {
+	limiter := newPublicRateLimiter(config.Config{PublicWriteRate: 1})
+	now := time.Unix(1_800_000_000, 0)
+	limiter.now = func() time.Time { return now }
+	for index := 0; index < maxPublicRateEntries; index++ {
+		if allowed, _ := limiter.allow(limiter.writes, fmt.Sprintf("guest-%d", index), 1); !allowed {
+			t.Fatalf("entry %d was rejected before the bucket reached its cap", index)
+		}
+	}
+	if allowed, retry := limiter.allow(limiter.writes, "overflow-guest", 1); allowed || retry != 60 {
+		t.Fatalf("overflow entry allowed=%v retry=%d", allowed, retry)
+	}
+	now = now.Add(rateEntryMaxAge + time.Second)
+	if allowed, _ := limiter.allow(limiter.writes, "recovered-guest", 1); !allowed {
+		t.Fatal("expired entries were not swept from the bounded bucket")
 	}
 }

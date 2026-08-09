@@ -2058,9 +2058,13 @@
   var localStream = null;
   var remoteStream = null;
   var microphoneRecording = null;
+  var recordingPendingBytes = 0;
+  var recordingFinalizingStates = [];
   var RECORDING_CHUNK_MS = 5000;
   var RECORDING_AUDIO_BITS_PER_SECOND = 16000;
+  var RECORDING_MAX_CHUNKS = 14400;
   var RECORDING_MAX_PENDING_BYTES = 8 << 20;
+  var RECORDING_GLOBAL_MAX_PENDING_BYTES = 8 << 20;
   var RECORDING_FETCH_TIMEOUT_MS = 8000;
   var audioCtx = null;
   var localAnalyser = null, remoteAnalyser = null;
@@ -2137,6 +2141,11 @@
   var conversationReady = false;
   var conversationReadyPromise = null;
   var conversationWriteChain = Promise.resolve();
+  var conversationWriteTimer = 0;
+  var conversationPendingWrites = new Map();
+  var conversationWriteInFlight = false;
+  var CONVERSATION_WRITE_DEBOUNCE_MS = 1500;
+  var CONVERSATION_WRITE_TIMEOUT_MS = 8000;
   var conversationSyncErrorShown = false;
   var contextMenuSessionId = '';
   var contextMenuReturnFocus = null;
@@ -2191,7 +2200,7 @@
       sessionUntitled: '未命名会话',
       conversationLoading: '正在从 SQLite 加载会话…',
       conversationLoadFailed: '无法读取 SQLite 会话记录',
-      conversationSaveFailed: '会话内容写入 SQLite 失败',
+      conversationSaveFailed: '对话记录保存失败',
       conversationNotReady: '会话数据库尚未准备好',
       conversationMigrated: '浏览器中的旧会话已迁移到 SQLite',
       renameSession: '重命名',
@@ -2367,7 +2376,7 @@
       sessionUntitled: 'Untitled conversation',
       conversationLoading: 'Loading conversations from SQLite…',
       conversationLoadFailed: 'Could not load SQLite conversations',
-      conversationSaveFailed: 'Could not save the conversation to SQLite',
+      conversationSaveFailed: 'Could not save the conversation',
       conversationNotReady: 'The conversation database is not ready',
       conversationMigrated: 'Browser-local conversations were migrated to SQLite',
       renameSession: 'Rename',
@@ -3122,7 +3131,10 @@
     var data = {};
     try { data = await response.json(); } catch (e) {}
     if (!response.ok) {
-      throw new Error((data.detail && data.detail.error) || ('HTTP ' + response.status));
+      var requestError = new Error((data.detail && data.detail.error) || ('HTTP ' + response.status));
+      requestError.status = response.status;
+      requestError.retryAfterMs = Math.max(0, Number(response.headers.get('Retry-After') || 0) * 1000);
+      throw requestError;
     }
     return data;
   }
@@ -3404,7 +3416,7 @@
     if (!session) return;
     closeSessionContextMenu(false);
     try {
-      if (id === activeSessionId) await conversationWriteChain;
+      await flushPendingConversationWrites();
       var data = await conversationRequest('/api/conversations/' + encodeURIComponent(id));
       var text = conversationTXTContent(data.conversation && data.conversation.messages);
       if (!text) {
@@ -3423,7 +3435,7 @@
     if (!session) return;
     closeSessionContextMenu(false);
     try {
-      if (id === activeSessionId) await conversationWriteChain;
+      await flushPendingConversationWrites();
       var data = await conversationRequest('/api/conversations/' + encodeURIComponent(id));
       var conversation = data.conversation || {};
       if (!Array.isArray(conversation.messages)) conversation.messages = [];
@@ -3473,7 +3485,7 @@
       toast(t('sessionDeleteBusy'));
       return;
     }
-    if (id === activeSessionId) await conversationWriteChain;
+    await flushPendingConversationWrites();
     await conversationRequest('/api/conversations/' + encodeURIComponent(id), { method: 'DELETE' });
     var wasActive = id === activeSessionId;
     conversationSessions = conversationSessions.filter(function (item) { return item.id !== id; });
@@ -3532,6 +3544,7 @@
 
   async function createConversationSession() {
     await waitForConversationStore();
+    await flushPendingConversationWrites();
     // New local chat must not reuse the previous chatgpt.com conversation.
     await releaseBackendVoiceSession(false);
     conversationId = '';
@@ -3561,6 +3574,7 @@
     }
     try {
       await waitForConversationStore();
+      await flushPendingConversationWrites();
       await loadConversationDetail(id);
       document.body.classList.remove('sessions-open');
     } catch (error) {
@@ -3610,6 +3624,77 @@
     renderSessionList();
   }
 
+  function scheduleConversationWriteFlush(delayMs) {
+    if (conversationWriteTimer || conversationWriteInFlight || !conversationPendingWrites.size) return;
+    conversationWriteTimer = setTimeout(function () {
+      conversationWriteTimer = 0;
+      drainPendingConversationWrites();
+    }, Math.max(CONVERSATION_WRITE_DEBOUNCE_MS, Number(delayMs) || 0));
+  }
+
+  async function writeConversationMessagePayload(entry) {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timeout = controller ? setTimeout(function () { controller.abort(); }, CONVERSATION_WRITE_TIMEOUT_MS) : 0;
+    try {
+      return await conversationRequest('/api/conversations/' + encodeURIComponent(entry.conversationID) + '/messages', {
+        method: 'POST',
+        keepalive: true,
+        priority: 'low',
+        signal: controller ? controller.signal : undefined,
+        body: JSON.stringify(entry.payload)
+      });
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  function drainPendingConversationWrites() {
+    if (conversationWriteTimer) {
+      clearTimeout(conversationWriteTimer);
+      conversationWriteTimer = 0;
+    }
+    if (conversationWriteInFlight || !conversationPendingWrites.size) return conversationWriteChain;
+    var batch = Array.from(conversationPendingWrites.values());
+    conversationPendingWrites.clear();
+    conversationWriteInFlight = true;
+    var retryDelayMs = 0;
+    conversationWriteChain = (async function () {
+      var failed = false;
+      for (var index = 0; index < batch.length; index++) {
+        var entry = batch[index];
+        try {
+          await writeConversationMessagePayload(entry);
+        } catch (error) {
+          failed = true;
+          var status = Number(error && error.status || 0);
+          var retryable = !status || status === 408 || status === 429 || status >= 500;
+          if (retryable && Number(entry.attempts || 0) < 3 && !conversationPendingWrites.has(entry.key)) {
+            entry.attempts = Number(entry.attempts || 0) + 1;
+            conversationPendingWrites.set(entry.key, entry);
+            retryDelayMs = Math.max(retryDelayMs, Number(error && error.retryAfterMs || 0), 2500);
+          } else if (!conversationSyncErrorShown) {
+            conversationSyncErrorShown = true;
+            toast(t('conversationSaveFailed') + ': ' + String(error && error.message || error));
+          }
+        }
+      }
+      if (!failed) conversationSyncErrorShown = false;
+    })().finally(function () {
+      conversationWriteInFlight = false;
+      scheduleConversationWriteFlush(retryDelayMs);
+    });
+    return conversationWriteChain;
+  }
+
+  async function flushPendingConversationWrites() {
+    if (conversationWriteTimer) {
+      clearTimeout(conversationWriteTimer);
+      conversationWriteTimer = 0;
+    }
+    if (conversationWriteInFlight) await conversationWriteChain.catch(function () {});
+    if (conversationPendingWrites.size) await drainPendingConversationWrites().catch(function () {});
+  }
+
   function persistConversationMessage(message) {
     if (!conversationReady || !activeSessionId || !message) return Promise.resolve();
     var conversationID = activeSessionId;
@@ -3619,20 +3704,17 @@
       content: message.content
     };
     message.clientId = payload.client_id;
-    conversationWriteChain = conversationWriteChain.catch(function () {}).then(function () {
-      return conversationRequest('/api/conversations/' + encodeURIComponent(conversationID) + '/messages', {
-        method: 'POST',
-        keepalive: true,
-        body: JSON.stringify(payload)
-      });
-    }).then(function () {
-      conversationSyncErrorShown = false;
-    }).catch(function (error) {
-      if (!conversationSyncErrorShown) {
-        conversationSyncErrorShown = true;
-        toast(t('conversationSaveFailed') + ': ' + error.message);
-      }
+    // Streaming captions update the same client_id several times per second.
+    // Keep only the newest payload and flush on a fixed cadence so network and
+    // SQLite work stay bounded even if a write stalls.
+    var writeKey = conversationID + '\n' + payload.client_id;
+    conversationPendingWrites.set(writeKey, {
+      key: writeKey,
+      conversationID: conversationID,
+      payload: payload,
+      attempts: 0
     });
+    scheduleConversationWriteFlush();
     return conversationWriteChain;
   }
 
@@ -4748,6 +4830,7 @@
   // cleanup remains the final safety net.
   function releaseOnPageExit() {
     finishMicrophoneRecording('page_exit');
+    flushPendingConversationWrites().catch(function () {});
     if (!(inCall || starting) || !voiceSessionId) return;
     try {
       fetch('/api/voice/session/release', {
@@ -5021,26 +5104,36 @@
     return (data && data.detail && (data.detail.error || JSON.stringify(data.detail))) || ('HTTP ' + response.status);
   }
 
-  function recordingFetch(url, options, timeoutMs) {
+  function recordingFetch(url, options, timeoutMs, chunkState) {
     options = options || {};
     if (!options.priority) options.priority = 'low';
     var controller = window.AbortController ? new AbortController() : null;
-    if (controller) options.signal = controller.signal;
+    if (controller) {
+      options.signal = controller.signal;
+      if (chunkState && chunkState.chunkControllers) chunkState.chunkControllers.push(controller);
+    }
     var timer = setTimeout(function () {
       if (controller) controller.abort();
     }, Math.max(1000, timeoutMs || RECORDING_FETCH_TIMEOUT_MS));
-    return gatewayFetch(url, options).finally(function () { clearTimeout(timer); });
+    return gatewayFetch(url, options).finally(function () {
+      clearTimeout(timer);
+      if (controller && chunkState && chunkState.chunkControllers) {
+        var index = chunkState.chunkControllers.indexOf(controller);
+        if (index >= 0) chunkState.chunkControllers.splice(index, 1);
+      }
+    });
   }
 
   async function uploadRecordingChunk(state, blob, sequence) {
     var lastError = null;
     for (var attempt = 0; attempt < 3; attempt++) {
+      if (state.uploadDisabled) break;
       try {
         var response = await recordingFetch('/api/recordings/' + encodeURIComponent(state.id) + '/chunks/' + sequence, {
           method: 'PUT',
           headers: { 'content-type': state.mimeType },
           body: blob
-        });
+        }, RECORDING_FETCH_TIMEOUT_MS, state);
         if (response.ok) return;
         var data = {};
         try { data = await response.json(); } catch (e) {}
@@ -5049,6 +5142,7 @@
         throw responseError;
       } catch (error) {
         lastError = error;
+        if (state.uploadDisabled) break;
         if (error && error.retryable === false) break;
         if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 350 * (attempt + 1)); });
       }
@@ -5064,13 +5158,19 @@
 
   function enqueueRecordingChunk(state, blob) {
     if (!state || state.finalized || state.uploadDisabled || !blob || !blob.size) return;
-    var sequence = state.sequence++;
-    if (state.pendingBytes + blob.size > RECORDING_MAX_PENDING_BYTES) {
+    if (state.sequence >= RECORDING_MAX_CHUNKS) {
       state.uploadDisabled = true;
-      markRecordingFailed(state, 'recording upload queue exceeded 8 MiB');
+      markRecordingFailed(state, 'recording reached the maximum supported duration');
+      return;
+    }
+    var sequence = state.sequence++;
+    if (state.pendingBytes + blob.size > RECORDING_MAX_PENDING_BYTES || recordingPendingBytes + blob.size > RECORDING_GLOBAL_MAX_PENDING_BYTES) {
+      state.uploadDisabled = true;
+      markRecordingFailed(state, 'recording upload queue reached its safety limit');
       return;
     }
     state.pendingBytes += blob.size;
+    recordingPendingBytes += blob.size;
     state.uploadChain = state.uploadChain.catch(function () {}).then(function () {
       if (state.uploadDisabled) return;
       return uploadRecordingChunk(state, blob, sequence);
@@ -5079,16 +5179,41 @@
       markRecordingFailed(state, error);
     }).then(function () {
       state.pendingBytes = Math.max(0, state.pendingBytes - blob.size);
+      recordingPendingBytes = Math.max(0, recordingPendingBytes - blob.size);
+    });
+  }
+
+  function trackRecordingFinalizer(state) {
+    if (!state || state.finalizerTracked) return;
+    state.finalizerTracked = true;
+    recordingFinalizingStates.push(state);
+  }
+
+  function untrackRecordingFinalizer(state) {
+    if (!state || !state.finalizerTracked) return;
+    state.finalizerTracked = false;
+    var index = recordingFinalizingStates.indexOf(state);
+    if (index >= 0) recordingFinalizingStates.splice(index, 1);
+  }
+
+  function abortBackgroundRecordingUploads(reason) {
+    recordingFinalizingStates.slice().forEach(function (state) {
+      state.uploadDisabled = true;
+      markRecordingFailed(state, reason || 'new call took priority');
+      (state.chunkControllers || []).slice().forEach(function (controller) {
+        try { controller.abort(); } catch (e) {}
+      });
     });
   }
 
   async function finalizeRecordingState(state) {
     if (!state || state.finalized) return;
     state.finalized = true;
+    trackRecordingFinalizer(state);
     try {
       await state.uploadChain.catch(function () {});
       await Promise.race([
-        conversationWriteChain.catch(function () {}),
+        flushPendingConversationWrites().catch(function () {}),
         new Promise(function (resolve) { setTimeout(resolve, 2500); })
       ]);
       var completeBody = JSON.stringify({
@@ -5121,11 +5246,18 @@
     } catch (error) {
       // Recording is strictly best-effort. Never surface this through call state.
       log('microphone recording finalize fail', state.id, String(error && error.message || error));
+    } finally {
+      state.chunkControllers = [];
+      untrackRecordingFinalizer(state);
     }
   }
 
   async function startMicrophoneRecording() {
     if (microphoneRecording || !inCall || !localStream || !activeSessionId || !voiceSessionId) return;
+    if (recordingFinalizingStates.length) {
+      log('microphone recording skipped while previous recording finalizes');
+      return;
+    }
     var stream = localStream;
     var mimeType = preferredRecordingMimeType() || 'audio/webm';
     try {
@@ -5182,7 +5314,9 @@
         errorMessage: recorderError,
         uploadDisabled: false,
         finalized: false,
-        stopFallbackTimer: 0
+        stopFallbackTimer: 0,
+        chunkControllers: [],
+        finalizerTracked: false
       };
       microphoneRecording = state;
       if (!recorder) {
@@ -5212,6 +5346,7 @@
     var state = microphoneRecording;
     if (!state) return;
     microphoneRecording = null;
+    trackRecordingFinalizer(state);
     state.stoppedAt = Date.now();
     if (reason && reason !== 'hangup') {
       state.failed = true;
@@ -5268,6 +5403,10 @@
     if (starting || stoppingCall || inCall) return;
     starting = true;
     try {
+      // A new live call always wins over best-effort uploads left by the
+      // previous call. Aborting those chunk requests prevents background TCP
+      // traffic from competing with WebRTC on a constrained uplink.
+      abortBackgroundRecordingUploads('new call took priority over pending recording uploads');
       await stopVoicePreviewOnly();
       // User gesture: unlock audio and prefer media/playback route when the browser allows it.
       preferSpeakerOutput();
@@ -5579,6 +5718,13 @@
         remoteAudio.muted = false;
         remoteAudio.volume = Math.min(1, Math.max(0, playbackVolume));
       }
+      // The data channel is closed, so force the final coalesced caption to
+      // SQLite. Bound the wait so a degraded persistence path cannot delay
+      // hangup or gateway release for more than a moment.
+      await Promise.race([
+        flushPendingConversationWrites().catch(function () {}),
+        new Promise(function (resolve) { setTimeout(resolve, 1200); })
+      ]);
       // Keep ending UI while post-hangup network work runs (title + release).
       updateCallControls();
       // Persist sticky ids, then pull upstream title once if not user-locked.
