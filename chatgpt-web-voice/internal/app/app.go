@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/config"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/logging"
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/secretbox"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/store"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/voice"
@@ -73,6 +75,10 @@ func Run() error {
 	conversationStore := conversations.NewStore(db)
 	callSessionStore := callsessions.NewStore(db)
 	apiKeyStore := apikeys.NewStore(db)
+	recordingStore, err := recordings.NewStore(db, filepath.Join(cfg.DataDir, "recordings"))
+	if err != nil {
+		return fmt.Errorf("recording store setup failed: %w", err)
+	}
 	releasedOrphans, err := callSessionStore.MarkAllActiveReleased()
 	if err != nil {
 		return fmt.Errorf("release orphan call sessions failed: %w", err)
@@ -108,6 +114,7 @@ func Run() error {
 		Conversations: conversationStore,
 		APIKeys:       apiKeyStore,
 		CallSessions:  callSessionStore,
+		Recordings:    recordingStore,
 	})
 
 	handler := newHandler(cfg, authManager, apiKeyManager, apiServer, logger)
@@ -183,9 +190,11 @@ func newHandler(cfg config.Config, authManager *auth.Manager, apiKeyManager *aut
 		"GET /accounts", "GET /accounts.html",
 		"GET /keys", "GET /keys.html",
 		"GET /sessions", "GET /sessions.html",
+		"GET /records", "GET /records.html",
 		"/api/accounts", "/api/accounts/",
 		"/api/keys", "/api/keys/",
 		"/api/call-sessions", "/api/call-sessions/",
+		"/api/admin/recordings", "/api/admin/recordings/",
 	} {
 		root.Handle(path, authManager.Require(admin))
 	}

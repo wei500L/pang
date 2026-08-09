@@ -8,7 +8,7 @@
 
 浏览器或下游后端负责 WebRTC 媒体与 DataChannel；本服务负责账号池、向 `chatgpt.com/realtime/wm` 做 SDP 信令代理、语音会话绑定，以及必要的元数据持久化。使用自有 ChatGPT Web `access_token` 池，**不需要** OpenAI 官方 Realtime API Key。账号仅使用 `access_token`，过期后需在管理端及时更换，**不会自动刷新**。上游 token 在 SQLite 中以 AES-256-GCM 密封存储，不会完整返回给浏览器或下游。
 
-**设计边界：信令走网关，媒体由客户端直连上游。** 网关不接收、不存储原始通话音频。
+**设计边界：实时媒体仍由客户端直连上游。** 内置 `/voice` 页面会把用户麦克风流旁路编码为低码率分片，异步上传到网关保存；录制失败不会改变或阻断 WebRTC 通话。下游 `/v1` 客户端的媒体仍不经过网关，也不会被自动录制。
 
 ## 功能概览
 
@@ -17,6 +17,7 @@
 - 自动打断（barge-in）
 - 公开语音页：游客匿名 Cookie 隔离历史，无需登录
 - 管理端：Turnstile 登录、账号池、下游 API Key、会话元数据
+- 内置语音页自动记录用户麦克风与聊天正文；管理端可检索、播放和删除
 - 下游 `/v1` 接入：只持 API Key + `voice_session_id` 即可建连 / 恢复
 - 粘性账号与上游续聊线索由网关持久化，不向下游暴露池内账号信息
 - 内置语音页使用由 GLB 表面采样生成的 GPU 粒子 Agent，并复用同一麦克风流实时驱动
@@ -73,6 +74,7 @@ bash ./scripts/dev.sh
 | `/accounts` | 管理员：ChatGPT Web 账号池 |
 | `/keys` | 管理员：下游 API Key（完整密钥只显示一次） |
 | `/sessions` | 管理员：网关语音会话元数据（无聊天正文） |
+| `/records` | 管理员：内置语音页的麦克风录音与聊天快照 |
 
 编译二进制：
 
@@ -386,6 +388,7 @@ chatgpt.com + Azure WebRTC
 | `internal/accounts` | 账号池（token 密封） |
 | `internal/voice` | `/realtime/wm` 代理与会话绑定 |
 | `internal/callsessions` | 网关会话元数据（无聊天正文） |
+| `internal/recordings` | 录音元数据、分片组装、聊天快照与文件生命周期 |
 | `internal/conversations` | 按游客/管理员 owner 隔离的内置语音页文本会话 |
 | `internal/apikeys` | 下游 Key（仅存 hash） |
 
@@ -395,6 +398,8 @@ chatgpt.com + Azure WebRTC
 - 成功建连后写入 `call_sessions`：调用方（guest / admin / 下游 key）、粘性 `account_id`、上游 id、语音参数等。
 - 挂断释放**内存绑定**；再拨时凭 `voice_session_id` 从 SQLite 恢复粘性账号与上游线索。
 - 管理端 `/sessions` 可查看元数据，**不展示聊天内容**。下游 `/v1` 本身也不落库聊天正文。
+- 管理端 `/records` 展示内置 `/voice` 产生的用户麦克风录音与聊天快照。编码音频存放在 `VOICE_DATA_DIR/recordings`，SQLite 只保存索引和正文快照，不保存音频 BLOB。
+- 录音使用浏览器 `MediaRecorder` 旁路采集，默认约 24 kbps、5 秒一片、串行上传；上传队列和失败处理与 WebRTC 媒体链路隔离。
 
 更细的实现说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 

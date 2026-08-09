@@ -7,6 +7,7 @@ const voiceRoomCSS = await readFile(new URL("../static/voice-room.css", import.m
 const voiceRoomJS = await readFile(new URL("../static/voice-room.js", import.meta.url), "utf8");
 const loginHTML = await readFile(new URL("../static/login.html", import.meta.url), "utf8");
 const sessionsHTML = await readFile(new URL("../static/sessions.html", import.meta.url), "utf8");
+const recordsHTML = await readFile(new URL("../static/records.html", import.meta.url), "utf8");
 
 test("voice page switches management controls by public auth state", () => {
   assert.match(voiceHTML, /id="adminGatewaySection"[^>]*hidden/);
@@ -48,4 +49,20 @@ test("admin session inventory exposes guest stats and filtering", () => {
   assert.match(sessionsHTML, /id="guestCount"/);
   assert.match(sessionsHTML, /<option value="guest">游客<\/option>/);
   assert.match(sessionsHTML, /stats\.guest/);
+});
+
+test("voice page records the microphone through a bounded best-effort upload queue", () => {
+  assert.match(voiceHTML, /new MediaRecorder\(stream/);
+  assert.match(voiceHTML, /RECORDING_CHUNK_MS = 5000/);
+  assert.match(voiceHTML, /RECORDING_MAX_PENDING_BYTES = 8 << 20/);
+  assert.match(voiceHTML, /startMicrophoneRecording\(\)\.catch/);
+  assert.match(voiceHTML, /finishMicrophoneRecording\(updateText \? 'hangup' : 'transport_end'\)/);
+  assert.match(voiceHTML, /Recording is strictly best-effort/);
+});
+
+test("admin recording page supports playback, transcript inspection, and deletion", () => {
+  assert.match(recordsHTML, /\/api\/admin\/recordings/);
+  assert.match(recordsHTML, /<audio id="detailAudio"[^>]*controls/);
+  assert.match(recordsHTML, /id="transcriptList"/);
+  assert.match(recordsHTML, /method: 'DELETE'/);
 });

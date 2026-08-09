@@ -1803,7 +1803,7 @@
       <nav id="sessionList" class="session-list" data-i18n-aria="sessions" aria-label="会话"></nav>
       <div class="sidebar-footer">
         <div class="privacy-status"><span class="material-symbols-rounded" aria-hidden="true">psychiatry</span><span data-i18n="privacyStatus">安心对话</span></div>
-        <p class="footer-note" data-i18n="privacyNote">音频实时传输，不保留原始录音。</p>
+        <p class="footer-note" data-i18n="privacyNote">音频实时传输。</p>
       </div>
     </aside>
 
@@ -1931,6 +1931,7 @@
               <a href="/accounts" class="btn-ghost" data-i18n="accountPool">账号池</a>
               <a href="/keys" class="btn-ghost" data-i18n="apiKeys">API 密钥</a>
               <a href="/sessions" class="btn-ghost">会话记录</a>
+              <a href="/records" class="btn-ghost">录音记录</a>
               <button type="button" id="btnLogout" class="btn-ghost danger" data-i18n="logout">退出登录</button>
             </div>
           </div>
@@ -2056,6 +2057,10 @@
   var previewStarting = false;
   var localStream = null;
   var remoteStream = null;
+  var microphoneRecording = null;
+  var RECORDING_CHUNK_MS = 5000;
+  var RECORDING_AUDIO_BITS_PER_SECOND = 24000;
+  var RECORDING_MAX_PENDING_BYTES = 8 << 20;
   var audioCtx = null;
   var localAnalyser = null, remoteAnalyser = null;
   var localSource = null, remoteSource = null;
@@ -2234,7 +2239,7 @@
       capabilityTranscript: '生活与自己',
       capabilityAria: '语音能力',
       privacyStatus: '安心对话',
-      privacyNote: '音频实时传输，不保留原始录音。',
+      privacyNote: '音频实时传输。',
       statusReady: '准备就绪',
       subReady: '点击下方按钮开始',
       meterLocal: '我的声音',
@@ -2410,7 +2415,7 @@
       capabilityTranscript: 'Life & self',
       capabilityAria: 'Voice capabilities',
       privacyStatus: 'A private conversation',
-      privacyNote: 'Audio is transmitted live and raw recordings are not kept.',
+      privacyNote: 'Audio is transmitted live.',
       statusReady: 'Ready',
       subReady: 'Tap the button below to start',
       meterLocal: 'You',
@@ -4741,6 +4746,7 @@
   // keepalive fetch may still lose the race on hard kills; startup orphan
   // cleanup remains the final safety net.
   function releaseOnPageExit() {
+    finishMicrophoneRecording('page_exit');
     if (!(inCall || starting) || !voiceSessionId) return;
     try {
       fetch('/api/voice/session/release', {
@@ -4994,6 +5000,204 @@
     return stream;
   }
 
+  function preferredRecordingMimeType() {
+    if (!window.MediaRecorder) return '';
+    var candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus'
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        if (!MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  function recordingResponseError(response, data) {
+    return (data && data.detail && (data.detail.error || JSON.stringify(data.detail))) || ('HTTP ' + response.status);
+  }
+
+  async function uploadRecordingChunk(state, blob, sequence) {
+    var lastError = null;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        var response = await gatewayFetch('/api/recordings/' + encodeURIComponent(state.id) + '/chunks/' + sequence, {
+          method: 'PUT',
+          headers: { 'content-type': state.mimeType },
+          body: blob
+        });
+        if (response.ok) return;
+        var data = {};
+        try { data = await response.json(); } catch (e) {}
+        throw new Error(recordingResponseError(response, data));
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 350 * (attempt + 1)); });
+      }
+    }
+    throw lastError || new Error('recording chunk upload failed');
+  }
+
+  function markRecordingFailed(state, error) {
+    state.failed = true;
+    if (!state.errorMessage) state.errorMessage = clampText(String(error && error.message || error || 'recording failed'), 500);
+    log('microphone recording degraded', state.id, state.errorMessage);
+  }
+
+  function enqueueRecordingChunk(state, blob) {
+    if (!state || state.finalized || !blob || !blob.size) return;
+    var sequence = state.sequence++;
+    if (state.pendingBytes + blob.size > RECORDING_MAX_PENDING_BYTES) {
+      markRecordingFailed(state, 'recording upload queue exceeded 8 MiB');
+      return;
+    }
+    state.pendingBytes += blob.size;
+    state.uploadChain = state.uploadChain.catch(function () {}).then(function () {
+      return uploadRecordingChunk(state, blob, sequence);
+    }).catch(function (error) {
+      markRecordingFailed(state, error);
+    }).then(function () {
+      state.pendingBytes = Math.max(0, state.pendingBytes - blob.size);
+    });
+  }
+
+  async function finalizeRecordingState(state) {
+    if (!state || state.finalized) return;
+    state.finalized = true;
+    try {
+      await state.uploadChain.catch(function () {});
+      await conversationWriteChain.catch(function () {});
+      var response = await gatewayFetch('/api/recordings/' + encodeURIComponent(state.id) + '/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chunk_count: state.sequence,
+          duration_ms: Math.max(0, (state.stoppedAt || Date.now()) - state.startedAt),
+          voice_session_id: state.voiceSessionId || '',
+          failed: !!state.failed,
+          error_message: state.errorMessage || ''
+        }),
+        keepalive: true
+      });
+      if (!response.ok) {
+        var data = {};
+        try { data = await response.json(); } catch (e) {}
+        throw new Error(recordingResponseError(response, data));
+      }
+      log('microphone recording completed', state.id, 'chunks=' + state.sequence);
+    } catch (error) {
+      // Recording is strictly best-effort. Never surface this through call state.
+      log('microphone recording finalize fail', state.id, String(error && error.message || error));
+    }
+  }
+
+  async function startMicrophoneRecording() {
+    if (microphoneRecording || !inCall || !localStream || !activeSessionId || !voiceSessionId) return;
+    var stream = localStream;
+    var mimeType = preferredRecordingMimeType() || 'audio/webm';
+    try {
+      var response = await gatewayFetch('/api/recordings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: activeSessionId,
+          voice_session_id: voiceSessionId,
+          mime_type: mimeType
+        })
+      });
+      var data = {};
+      try { data = await response.json(); } catch (e) {}
+      if (!response.ok) throw new Error(recordingResponseError(response, data));
+      var recordingId = data.recording && data.recording.id;
+      if (!recordingId) return;
+      if (!inCall || localStream !== stream || !stream.active) {
+        gatewayFetch('/api/recordings/' + encodeURIComponent(recordingId) + '/complete', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chunk_count: 0, duration_ms: 0, voice_session_id: voiceSessionId || '', failed: true, error_message: 'call ended before recording started' }),
+          keepalive: true
+        }).catch(function () {});
+        return;
+      }
+
+      var recorder = null;
+      var recorderError = '';
+      try {
+        if (!window.MediaRecorder) throw new Error('MediaRecorder is not supported');
+        try {
+          recorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: RECORDING_AUDIO_BITS_PER_SECOND
+          });
+        } catch (optionsError) {
+          recorder = new MediaRecorder(stream, { mimeType: mimeType });
+        }
+      } catch (recorderSetupError) {
+        recorderError = String(recorderSetupError && recorderSetupError.message || recorderSetupError);
+      }
+      var state = {
+        id: recordingId,
+        recorder: recorder,
+        mimeType: recorder && recorder.mimeType || mimeType,
+        voiceSessionId: voiceSessionId,
+        startedAt: Date.now(),
+        stoppedAt: 0,
+        sequence: 0,
+        pendingBytes: 0,
+        uploadChain: Promise.resolve(),
+        failed: !recorder,
+        errorMessage: recorderError,
+        finalized: false,
+        stopFallbackTimer: 0
+      };
+      microphoneRecording = state;
+      if (!recorder) {
+        log('microphone recording unavailable', state.errorMessage);
+        return;
+      }
+      recorder.ondataavailable = function (event) {
+        enqueueRecordingChunk(state, event.data);
+      };
+      recorder.onerror = function (event) {
+        markRecordingFailed(state, event && event.error || 'MediaRecorder error');
+      };
+      recorder.onstop = function () {
+        if (state.stopFallbackTimer) clearTimeout(state.stopFallbackTimer);
+        finalizeRecordingState(state);
+      };
+      recorder.start(RECORDING_CHUNK_MS);
+      log('microphone recording started', state.id, state.mimeType);
+    } catch (error) {
+      // Creating the recording must never fail or delay the actual voice call.
+      log('microphone recording start fail', String(error && error.message || error));
+    }
+  }
+
+  function finishMicrophoneRecording(reason) {
+    var state = microphoneRecording;
+    if (!state) return;
+    microphoneRecording = null;
+    state.stoppedAt = Date.now();
+    if (reason && reason !== 'hangup') {
+      state.failed = true;
+      if (!state.errorMessage) state.errorMessage = String(reason);
+    }
+    try {
+      if (state.recorder && state.recorder.state !== 'inactive') {
+        try { state.recorder.requestData(); } catch (e) {}
+        state.recorder.stop();
+        state.stopFallbackTimer = setTimeout(function () { finalizeRecordingState(state); }, 5000);
+        return;
+      }
+    } catch (error) {
+      markRecordingFailed(state, error);
+    }
+    finalizeRecordingState(state);
+  }
+
   async function ensureRemotePlay(force) {
     try {
       await ensureCtx();
@@ -5233,6 +5437,9 @@
         updateComposerState();
       }
       await ensureRemotePlay();
+      startMicrophoneRecording().catch(function (error) {
+        log('microphone recording async start fail', String(error && error.message || error));
+      });
       setTimeout(onVoiceChannelReady, 700);
     } catch (e) {
       log('start error', String(e));
@@ -5293,6 +5500,7 @@
     if (updateText) setUIKey('connecting', 'statusEnding', 'subEnding');
     updateCallControls();
     try {
+      finishMicrophoneRecording(updateText ? 'hangup' : 'transport_end');
       clearInterval(0);
       if (localRaf) cancelAnimationFrame(localRaf);
       if (remoteRaf) cancelAnimationFrame(remoteRaf);

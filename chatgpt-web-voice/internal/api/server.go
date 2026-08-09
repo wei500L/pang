@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/accounts"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/apikeys"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/voice"
 )
 
@@ -41,6 +44,19 @@ type APIKeyStore interface {
 	Stats() (apikeys.Stats, error)
 }
 
+// RecordingStore persists browser microphone recordings outside SQLite while
+// exposing metadata and transcript snapshots through the admin surface.
+type RecordingStore interface {
+	Create(owner string, input recordings.CreateInput) (recordings.Item, error)
+	AddChunk(owner, id string, sequence int, reader io.Reader) (recordings.Item, error)
+	Complete(owner, id string, input recordings.CompleteInput) (recordings.Item, error)
+	GetAdmin(id string) (recordings.Detail, error)
+	List(filter recordings.ListFilter) ([]recordings.Item, error)
+	Stats() (recordings.Stats, error)
+	OpenAudio(id string) (*os.File, recordings.Item, error)
+	Delete(id string) error
+}
+
 // VoiceService is the voice-session surface required by handlers.
 type VoiceService interface {
 	CreateSession(req voice.CreateSessionRequest) (*voice.SessionResult, error)
@@ -60,6 +76,7 @@ type Dependencies struct {
 	Conversations ConversationStore
 	APIKeys       APIKeyStore
 	CallSessions  CallSessionStore
+	Recordings    RecordingStore
 }
 
 // Server holds HTTP handlers for the voice gateway.
@@ -69,6 +86,7 @@ type Server struct {
 	conversations ConversationStore
 	apiKeys       APIKeyStore
 	callSessions  CallSessionStore
+	recordings    RecordingStore
 }
 
 // New creates an API server from domain dependencies.
@@ -79,6 +97,7 @@ func New(deps Dependencies) *Server {
 		conversations: deps.Conversations,
 		apiKeys:       deps.APIKeys,
 		callSessions:  deps.CallSessions,
+		recordings:    deps.Recordings,
 	}
 }
 
@@ -105,6 +124,9 @@ func (s *Server) RegisterPublic(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/conversations/{id}", s.updateConversation)
 	mux.HandleFunc("DELETE /api/conversations/{id}", s.deleteConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/messages", s.upsertConversationMessage)
+	mux.HandleFunc("POST /api/recordings", s.createRecording)
+	mux.HandleFunc("PUT /api/recordings/{id}/chunks/{sequence}", s.uploadRecordingChunk)
+	mux.HandleFunc("POST /api/recordings/{id}/complete", s.completeRecording)
 }
 
 // RegisterAdmin mounts account-pool, API-key, and gateway-session management.
@@ -120,6 +142,10 @@ func (s *Server) RegisterAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/keys/{id}", s.deleteAPIKey)
 	mux.HandleFunc("GET /api/call-sessions", s.listCallSessions)
 	mux.HandleFunc("DELETE /api/call-sessions/{id}", s.deleteCallSession)
+	mux.HandleFunc("GET /api/admin/recordings", s.listRecordings)
+	mux.HandleFunc("GET /api/admin/recordings/{id}", s.getRecording)
+	mux.HandleFunc("GET /api/admin/recordings/{id}/audio", s.playRecording)
+	mux.HandleFunc("DELETE /api/admin/recordings/{id}", s.deleteRecording)
 }
 
 // RegisterDownstream mounts the API-key-only public integration surface.

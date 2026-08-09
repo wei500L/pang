@@ -14,17 +14,19 @@
 
 1. 用管理员维护的 **ChatGPT Web `access_token` 账号池** 访问 `chatgpt.com` 的 Web 语音入口；
 2. 浏览器（或下游后端）负责 **WebRTC 媒体与 DataChannel 事件**；
-3. 本服务负责 **鉴权、选号、SDP 信令代理、会话绑定、粘性续聊元数据、可选图片上传凭证、会话文本落库**。
+3. 本服务负责 **鉴权、选号、SDP 信令代理、会话绑定、粘性续聊元数据、可选图片上传凭证、会话文本落库，以及内置页面的用户麦克风旁路录音**。
 
 | 谁负责 | 内容 |
 |---|---|
 | 浏览器 / 下游客户端 | 麦克风、扬声器、`RTCPeerConnection`、DataChannel、字幕、业务 UI；图片字节直传 Azure |
-| Gateway | 登录 / API Key、账号池、`/realtime/wm` SDP 代理、内存绑定 + `call_sessions`、文本会话、图片凭证与 complete |
+| Gateway | 登录 / API Key、账号池、`/realtime/wm` SDP 代理、内存绑定 + `call_sessions`、文本会话、录音分片与聊天快照、图片凭证与 complete |
 | chatgpt.com + Azure | 语音推理、WebRTC 媒体面、文件 blob、DataChannel 协议事件 |
 
-**设计边界：信令 / 凭证走 Gateway，媒体与图片字节尽量不经 Gateway。**
+**设计边界：实时媒体仍不经 Gateway；内置页面仅把麦克风复制流异步上传一份录音。**
 
-- Gateway **不接收、不存储原始通话音频**；
+- 浏览器与上游的 WebRTC 音频仍保持直连，网关不参与实时转发；
+- 内置 `/voice` 使用 `MediaRecorder` 保存用户麦克风的低码率编码副本，不录制 AI 远端音轨；
+- 下游 `/v1` 客户端不会被自动录制；
 - 图片上传：**不收图、不落库** `file_id` 与字节，只代持 token 申请 SAS / complete；
 - 账号仅使用 `access_token`，**不会自动 refresh**；过期需在管理端更换。
 
@@ -53,6 +55,7 @@
 │  voice.upload           files 凭证 + complete（无图落库）          │
 │  callsessions.Store     会话元数据（无聊天正文）                   │
 │  conversations.Store    本地文本会话 / 字幕 / title_locked         │
+│  recordings.Store       麦克风分片 / 文件组装 / 聊天快照            │
 │  apikeys.Store          下游 API Key                             │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │  multipart: sdp + session JSON
@@ -74,7 +77,7 @@
 
 一句话：
 
-> **信令与 token 绑定走 Gateway；媒体与图片字节直连上游。**
+> **信令与 token 绑定走 Gateway；实时媒体与图片字节直连上游；内置页另行旁路上传用户麦克风录音。**
 
 ---
 
@@ -86,10 +89,10 @@
 
 1. **配置**：`config.Load()` / `Validate()`，强制 `VOICE_AUTH_*` 与 `VOICE_TOKEN_ENCRYPTION_KEY`。
 2. **日志**：`logging.New` → 全局 `slog`。
-3. **SQLite**：`store.Open` + schema migrate（WAL、accounts / api_keys / conversations / messages / call_sessions / auth_sessions）。
+3. **SQLite**：`store.Open` + schema migrate（WAL、accounts / api_keys / conversations / messages / call_sessions / recordings / recording_messages / auth_sessions）。
 4. **密钥盒**：`secretbox` AES-256-GCM。
 5. **账号池**：`accounts.NewPoolFromDB` + `WithBox` + `SealStoredTokens`。
-6. **领域**：conversations、apikeys、callsessions、`voice.Service.WithCallSessions`。
+6. **领域**：conversations、apikeys、callsessions、recordings、`voice.Service.WithCallSessions`。
 7. **鉴权**：浏览器 `auth.Manager`（可选 durable session store）、下游 `auth.APIKeyManager`。
 8. **路由分层**（见第 4 节）。
 9. **可选 TLS** 后监听；SIGINT/SIGTERM 优雅退出。
@@ -117,8 +120,8 @@ root mux
 │     ├── /api/voice/*
 │     └── /api/conversations/*
 └── Require(admin session)
-      ├── 页面 /accounts /keys /sessions
-      └── /api/accounts/* /api/keys/* /api/call-sessions/*
+      ├── 页面 /accounts /keys /sessions /records
+      └── /api/accounts/* /api/keys/* /api/call-sessions/* /api/admin/recordings/*
 ```
 
 最外层：
@@ -220,14 +223,33 @@ api_key:<numeric_id>
 - 内置页：`POST /api/voice/session/context` + `PATCH` 本地 conversation；
 - 下游：`POST /v1/voice/sessions/{id}/context`。
 
-### 5.3 挂断与释放
+### 5.3 内置页面的麦克风旁路录音
+
+通话完成 SDP 交换后，内置页针对已经存在的 `localStream` 启动第二个消费者：
+
+```text
+localStream
+├── RTCPeerConnection.addTrack → 上游实时媒体（原路径不变）
+└── MediaRecorder（约 24 kbps Opus，5 秒一片）
+      → PUT /api/recordings/{id}/chunks/{sequence}
+      → data/recordings/chunks
+      → complete 时顺序组装为 webm / m4a / ogg
+```
+
+- 上传串行重试，待上传内存上限 8 MiB；超过上限后丢弃后续分片并标记不完整；
+- 音频文件不写 SQLite，数据库只保存元数据与完成时的聊天正文快照；
+- `MediaRecorder`、网络或磁盘故障均 fail-open，不修改 WebRTC 状态；
+- 只覆盖内置 `/voice` 的用户麦克风，不包含 AI 远端音轨，也不覆盖下游 `/v1` 客户端。
+
+### 5.4 挂断与释放
 
 ```text
 内置页 stopCall:
-  1. 关掉 PC / mic / DC
-  2. persist 上游 id → 本地 conversation + gateway context
-  3. 若 title_locked=false → GET 上游标题并写回本地 title
-  4. POST /api/voice/session/release   // 清内存绑定；call_sessions → released
+  1. stop MediaRecorder；后台排空分片并生成聊天快照
+  2. 关掉 PC / mic / DC
+  3. persist 上游 id → 本地 conversation + gateway context
+  4. 若 title_locked=false → GET 上游标题并写回本地 title
+  5. POST /api/voice/session/release   // 清内存绑定；call_sessions → released
 
 下游:
   DELETE /v1/voice/sessions/{id}
@@ -437,6 +459,7 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 | `/accounts` | 管理员：账号池 CRUD、探活、JWT exp 展示 |
 | `/keys` | 管理员：下游 Key（一次性 secret） |
 | `/sessions` | 管理员：`call_sessions` 元数据（guest/admin/api_key） |
+| `/records` | 管理员：内置页麦克风录音、录制状态与聊天快照 |
 
 ### 7.1 `voice.html` 主路径
 
@@ -446,7 +469,8 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 4. 解析 DC 事件；可选 RMS → `stop_speaking`；
 5. 文本 `relay_message`；
 6. 会话 CRUD / 消息落库；
-7. 挂断：persist context → **拉标题（若未 lock）** → release。
+7. 通话建立后自动启动麦克风旁路录音；
+8. 挂断：停止录音 → persist context → **拉标题（若未 lock）** → release。
 
 ### 7.2 本地标题策略
 
@@ -497,6 +521,12 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 ### call_sessions
 
 网关语音会话元数据（无聊天正文）：owner、caller、account_id、上游 id、voice 选项、active/released、时间戳。
+
+### recordings / recording_messages
+
+- `recordings`：owner、本地/网关会话 id、MIME、状态、分片数、字节数、时长与错误；
+- `recording_messages`：录音完成时从 `conversation_messages` 复制的独立正文快照；
+- 编码音频位于 `data/recordings`，不作为 BLOB 写入 SQLite；删除记录时同时删除音频、残留分片与聊天快照。
 
 ### auth_sessions
 
@@ -633,4 +663,4 @@ internal/app              装配、TLS、静态路由、root mux
 
 ## 15. 一句话总结
 
-**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本（含可锁定的标题），同时把原始音频、图片字节与上游明文 token 挡在浏览器与磁盘明文之外。**
+**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的实时媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本；内置页面另以 fail-open 的旁路分片保存用户麦克风编码副本和聊天快照，而下游媒体及 AI 远端音轨仍不进入网关。**

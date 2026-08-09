@@ -29,7 +29,7 @@ type browserCookies struct {
 func newPublicAccessHandler(t *testing.T, cfg config.Config) http.Handler {
 	t.Helper()
 	staticDir := t.TempDir()
-	for _, name := range []string{"login.html", "voice.html", "accounts.html", "keys.html", "sessions.html"} {
+	for _, name := range []string{"login.html", "voice.html", "accounts.html", "keys.html", "sessions.html", "records.html"} {
 		if err := os.WriteFile(filepath.Join(staticDir, name), []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}

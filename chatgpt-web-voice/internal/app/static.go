@@ -52,6 +52,9 @@ func registerAdminStaticRoutes(mux *http.ServeMux, staticDir string) {
 	mux.HandleFunc("GET /sessions", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, joinStatic(staticDir, "sessions.html"))
 	})
+	mux.HandleFunc("GET /records", func(w http.ResponseWriter, r *http.Request) {
+		serveFile(w, r, joinStatic(staticDir, "records.html"))
+	})
 	// Keep the former file-suffixed URLs as canonical redirects for bookmarks
 	// and external links created before clean routes were introduced.
 	mux.HandleFunc("GET /accounts.html", func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +65,9 @@ func registerAdminStaticRoutes(mux *http.ServeMux, staticDir string) {
 	})
 	mux.HandleFunc("GET /sessions.html", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/sessions", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("GET /records.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/records", http.StatusMovedPermanently)
 	})
 }
 

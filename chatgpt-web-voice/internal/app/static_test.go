@@ -23,6 +23,9 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(staticDir, "sessions.html"), []byte("sessions page"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(staticDir, "records.html"), []byte("records page"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(staticDir, "app.css"), []byte("/* design system */"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +51,7 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 		"/accounts":                          "accounts page",
 		"/keys":                              "keys page",
 		"/sessions":                          "sessions page",
+		"/records":                           "records page",
 		"/static/app.css":                    "/* design system */",
 		"/static/agent-visual/index.js":      "export const ready = true;",
 		"/static/models/agent-particles.bin": string([]byte{1, 2, 3}),
@@ -66,6 +70,7 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 		"/accounts.html": "/accounts",
 		"/keys.html":     "/keys",
 		"/sessions.html": "/sessions",
+		"/records.html":  "/records",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()

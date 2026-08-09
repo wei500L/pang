@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>录音与聊天记录 · Voice Gateway</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2310a37f'/%3E%3Cpath d='M16 34h8l4-14 8 27 5-18h7' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .records-table th:nth-child(1) { width: 25%; }
+    .records-table th:nth-child(2) { width: 11%; }
+    .records-table th:nth-child(3) { width: 12%; }
+    .records-table th:nth-child(4) { width: 12%; }
+    .records-table th:nth-child(5) { width: 16%; }
+    .records-table th:nth-child(6) { width: 13%; }
+    .records-table th:nth-child(7) { width: 11%; }
+    .records-table td:nth-child(n+2) { text-align: center; }
+    .record-title { display: grid; gap: 4px; min-width: 0; }
+    .record-title strong, .record-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .record-title span { color: var(--muted); font: 11px/1.4 "JetBrains Mono", monospace; }
+    .record-status { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(16,163,127,.12); color: var(--green-dark); font-size: 12px; font-weight: 700; }
+    .record-status.recording { background: rgba(59,130,246,.12); color: #3b82f6; }
+    .record-status.incomplete { background: rgba(245,158,11,.14); color: #b7791f; }
+    .record-status.failed { background: rgba(239,68,68,.12); color: var(--red); }
+    .record-detail { width: min(820px, calc(100vw - 28px)); max-height: min(820px, calc(100dvh - 28px)); padding: 0; overflow: hidden; }
+    .record-detail::backdrop { background: rgba(0,0,0,.52); backdrop-filter: blur(4px); }
+    .record-detail-body { display: grid; gap: 18px; padding: 20px; overflow: auto; max-height: calc(100dvh - 150px); }
+    .record-meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .record-meta { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+    .record-meta span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+    .record-meta strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+    .record-player { width: 100%; }
+    .record-error { display: none; padding: 10px 12px; border-radius: 10px; background: rgba(239,68,68,.1); color: var(--red); font-size: 13px; }
+    .record-error.show { display: block; }
+    .transcript-list { display: grid; gap: 10px; }
+    .transcript-line { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
+    .transcript-line.user { margin-left: min(90px, 12%); }
+    .transcript-line.assistant { margin-right: min(90px, 12%); }
+    .transcript-line header { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
+    .transcript-line p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+    .detail-empty { color: var(--muted); text-align: center; padding: 24px; }
+    @media (max-width: 760px) {
+      .record-meta-grid { grid-template-columns: 1fr; }
+      .transcript-line.user, .transcript-line.assistant { margin: 0; }
+    }
+  </style>
+  <script>
+    (function () {
+      function readCSRFToken() {
+        try {
+          var part = (document.cookie || '').split(';').map(function (item) { return item.trim(); }).filter(function (item) {
+            return item.indexOf('voice_gateway_csrf=') === 0;
+          })[0] || '';
+          return part ? decodeURIComponent(part.split('=').slice(1).join('=')) : '';
+        } catch (e) { return ''; }
+      }
+      window.withCSRFHeaders = function (headers) {
+        headers = headers || {};
+        var token = readCSRFToken();
+        if (token) headers['X-CSRF-Token'] = token;
+        return headers;
+      };
+      try {
+        var theme = localStorage.getItem('chatgpt_web_voice_theme_v1');
+        if (theme !== 'light' && theme !== 'dark') theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+    })();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/voice"><span class="brand-mark">RC</span><span class="brand-title">录音记录</span></a>
+    <div class="top-actions">
+      <button type="button" class="header-chip" id="themeButton">主题</button>
+      <a class="nav-link" href="/accounts">账号池</a>
+      <a class="nav-link" href="/keys">API 密钥</a>
+      <a class="nav-link" href="/sessions">会话记录</a>
+      <a class="nav-link active" href="/records" aria-current="page">录音记录</a>
+      <a class="nav-link" href="/voice">语音通话</a>
+      <button type="button" class="nav-link" id="logoutButton">退出</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="page-head">
+      <div><h1>麦克风与聊天记录</h1><p class="page-sub">录音文件保存在本机数据目录；聊天正文会在录音结束时生成独立快照。</p></div>
+      <button type="button" class="btn" id="refreshButton">刷新</button>
+    </div>
+    <div class="note"><span class="note-mark">AUDIO</span><div><strong>旁路录制</strong>录音上传失败不会中断 WebRTC 通话；异常记录会显示为“不完整”或“失败”。</div></div>
+    <div class="stats">
+      <span class="stat-pill"><strong id="totalCount">0</strong><span>全部</span></span>
+      <span class="stat-pill"><strong id="recordingCount">0</strong><span>录制中</span></span>
+      <span class="stat-pill"><strong id="completedCount">0</strong><span>已完成</span></span>
+      <span class="stat-pill"><strong id="problemCount">0</strong><span>异常</span></span>
+      <span class="stat-pill"><strong id="storageCount">0 B</strong><span>录音占用</span></span>
+    </div>
+    <section class="panel">
+      <div class="toolbar"><div class="filters">
+        <div class="search"><input id="searchInput" type="search" autocomplete="off" placeholder="搜索标题、记录 ID、会话 ID…" /></div>
+        <select id="statusFilter" aria-label="状态">
+          <option value="all">全部状态</option><option value="recording">录制中</option><option value="completed">已完成</option><option value="incomplete">不完整</option><option value="failed">失败</option>
+        </select>
+      </div></div>
+      <div class="table-wrap" id="tableWrap"><table class="records-table"><thead><tr>
+        <th>对话</th><th>调用方</th><th>状态</th><th>录音</th><th>内容</th><th>创建时间</th><th>操作</th>
+      </tr></thead><tbody id="recordRows"></tbody></table></div>
+      <div class="empty" id="emptyState"><strong>暂无录音记录</strong><span>内置语音页成功建立通话后会自动生成。</span></div>
+    </section>
+  </main>
+
+  <dialog id="detailDialog" class="record-detail">
+    <div class="dialog-head"><h2 id="detailTitle">记录详情</h2><button type="button" class="dialog-close" id="detailClose" aria-label="关闭">×</button></div>
+    <div class="record-detail-body">
+      <div class="record-meta-grid">
+        <div class="record-meta"><span>记录 ID</span><strong id="detailID" class="mono">—</strong></div>
+        <div class="record-meta"><span>语音会话</span><strong id="detailVoiceSession" class="mono">—</strong></div>
+        <div class="record-meta"><span>时长 / 大小</span><strong id="detailMedia">—</strong></div>
+      </div>
+      <div id="detailError" class="record-error"></div>
+      <audio id="detailAudio" class="record-player" controls preload="metadata"></audio>
+      <section><h3>聊天记录</h3><div id="transcriptList" class="transcript-list"></div></section>
+    </div>
+    <div class="dialog-foot"><div class="dialog-actions"><button type="button" class="btn btn-danger" id="detailDelete">删除记录</button><button type="button" class="btn" id="detailDone">关闭</button></div></div>
+  </dialog>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    (function () {
+      'use strict';
+      var recordings = [];
+      var stats = {};
+      var selectedID = '';
+      var rows = document.getElementById('recordRows');
+      var tableWrap = document.getElementById('tableWrap');
+      var emptyState = document.getElementById('emptyState');
+      var searchInput = document.getElementById('searchInput');
+      var statusFilter = document.getElementById('statusFilter');
+      var detailDialog = document.getElementById('detailDialog');
+      var detailAudio = document.getElementById('detailAudio');
+      var toast = document.getElementById('toast');
+      var toastTimer = 0;
+
+      function showToast(message) {
+        toast.textContent = message; toast.classList.add('show'); clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+      }
+      function escapeHTML(value) {
+        return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function formatDate(value) {
+        if (!value) return '—';
+        var raw = String(value); var date = new Date(raw.indexOf('T') >= 0 ? raw : raw.replace(' ', 'T') + 'Z');
+        if (Number.isNaN(date.getTime())) return raw;
+        return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
+      }
+      function formatDuration(ms) {
+        var seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+        var minutes = Math.floor(seconds / 60); seconds %= 60;
+        return minutes ? (minutes + '分' + String(seconds).padStart(2, '0') + '秒') : (seconds + '秒');
+      }
+      function formatBytes(bytes) {
+        var value = Math.max(0, Number(bytes || 0));
+        if (value < 1024) return value + ' B';
+        if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB';
+        if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(1) + ' MB';
+        return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+      }
+      function statusText(status) {
+        return { recording: '录制中', completed: '已完成', incomplete: '不完整', failed: '失败' }[status] || status || '未知';
+      }
+      async function apiFetch(url, options) {
+        options = options || {}; options.credentials = 'same-origin'; options.headers = options.headers || {};
+        var method = String(options.method || 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') options.headers = withCSRFHeaders(options.headers);
+        var response = await fetch(url, options); var data = null;
+        try { data = await response.json(); } catch (e) {}
+        if (response.status === 401) { window.location.replace('/login'); throw new Error('登录已过期'); }
+        if (!response.ok) throw new Error(data && data.detail && data.detail.error || ('HTTP ' + response.status));
+        return data || {};
+      }
+      function renderRow(item) {
+        var title = item.conversation_title || '未命名对话';
+        var media = item.audio_available ? (formatDuration(item.duration_ms) + ' · ' + formatBytes(item.byte_size)) : '无可播放音频';
+        return '<tr data-id="' + escapeHTML(item.id) + '">' +
+          '<td><div class="record-title"><strong title="' + escapeHTML(title) + '">' + escapeHTML(title) + '</strong><span title="' + escapeHTML(item.id) + '">' + escapeHTML(item.id) + '</span></div></td>' +
+          '<td>' + escapeHTML(item.caller_label || item.caller_kind || 'guest') + '</td>' +
+          '<td><span class="record-status ' + escapeHTML(item.status) + '">' + escapeHTML(statusText(item.status)) + '</span></td>' +
+          '<td>' + escapeHTML(media) + '</td>' +
+          '<td>' + escapeHTML((item.message_count || 0) + ' 条消息') + '</td>' +
+          '<td>' + escapeHTML(formatDate(item.created_at)) + '</td>' +
+          '<td><div class="actions"><button type="button" class="btn btn-small" data-action="view">查看</button><button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button></div></td></tr>';
+      }
+      function render() {
+        document.getElementById('totalCount').textContent = stats.total || 0;
+        document.getElementById('recordingCount').textContent = stats.recording || 0;
+        document.getElementById('completedCount').textContent = stats.completed || 0;
+        document.getElementById('problemCount').textContent = Number(stats.incomplete || 0) + Number(stats.failed || 0);
+        document.getElementById('storageCount').textContent = formatBytes(stats.byte_size || 0);
+        rows.innerHTML = recordings.map(renderRow).join('');
+        tableWrap.style.display = recordings.length ? 'block' : 'none';
+        emptyState.classList.toggle('show', !recordings.length);
+      }
+      async function loadRecords(showMessage) {
+        var params = new URLSearchParams(); var query = searchInput.value.trim();
+        if (query) params.set('q', query); if (statusFilter.value !== 'all') params.set('status', statusFilter.value); params.set('limit', '300');
+        try {
+          var data = await apiFetch('/api/admin/recordings?' + params.toString());
+          recordings = Array.isArray(data.recordings) ? data.recordings : []; stats = data.stats || {}; render();
+          if (showMessage) showToast('已刷新');
+        } catch (error) { showToast('加载失败: ' + error.message); }
+      }
+      function renderMessages(messages) {
+        var host = document.getElementById('transcriptList'); host.textContent = '';
+        if (!messages.length) { var empty = document.createElement('div'); empty.className = 'detail-empty'; empty.textContent = '暂无聊天正文'; host.appendChild(empty); return; }
+        messages.forEach(function (message) {
+          var line = document.createElement('article'); line.className = 'transcript-line ' + (message.role === 'assistant' ? 'assistant' : 'user');
+          var header = document.createElement('header');
+          var role = document.createElement('strong'); role.textContent = message.role === 'assistant' ? 'AI' : '用户';
+          var time = document.createElement('span'); time.textContent = formatDate(message.updated_at || message.created_at);
+          var content = document.createElement('p'); content.textContent = message.content || '';
+          header.appendChild(role); header.appendChild(time); line.appendChild(header); line.appendChild(content); host.appendChild(line);
+        });
+      }
+      async function openDetail(id) {
+        try {
+          var data = await apiFetch('/api/admin/recordings/' + encodeURIComponent(id)); var item = data.recording || {};
+          selectedID = id; document.getElementById('detailTitle').textContent = item.conversation_title || '记录详情';
+          document.getElementById('detailID').textContent = item.id || '—';
+          document.getElementById('detailVoiceSession').textContent = item.voice_session_id || '—';
+          document.getElementById('detailMedia').textContent = formatDuration(item.duration_ms) + ' / ' + formatBytes(item.byte_size);
+          var error = document.getElementById('detailError'); error.textContent = item.error_message || ''; error.classList.toggle('show', !!item.error_message);
+          if (item.audio_available) { detailAudio.hidden = false; detailAudio.src = item.audio_url; detailAudio.load(); }
+          else { detailAudio.pause(); detailAudio.removeAttribute('src'); detailAudio.hidden = true; }
+          renderMessages(Array.isArray(data.messages) ? data.messages : []); detailDialog.showModal();
+        } catch (error) { showToast('读取失败: ' + error.message); }
+      }
+      async function deleteRecord(id) {
+        if (!id || !window.confirm('删除这条录音及其聊天快照？此操作不可恢复。')) return;
+        try {
+          await apiFetch('/api/admin/recordings/' + encodeURIComponent(id), { method: 'DELETE' });
+          if (detailDialog.open) detailDialog.close(); selectedID = ''; showToast('已删除'); await loadRecords(false);
+        } catch (error) { showToast('删除失败: ' + error.message); }
+      }
+
+      rows.addEventListener('click', function (event) {
+        var button = event.target.closest('button[data-action]'); if (!button) return;
+        var row = button.closest('tr[data-id]'); var id = row && row.getAttribute('data-id');
+        if (button.getAttribute('data-action') === 'view') openDetail(id); else deleteRecord(id);
+      });
+      document.getElementById('refreshButton').onclick = function () { loadRecords(true); };
+      searchInput.addEventListener('input', function () { clearTimeout(searchInput._timer); searchInput._timer = setTimeout(function () { loadRecords(false); }, 250); });
+      statusFilter.onchange = function () { loadRecords(false); };
+      document.getElementById('detailClose').onclick = function () { detailDialog.close(); };
+      document.getElementById('detailDone').onclick = function () { detailDialog.close(); };
+      document.getElementById('detailDelete').onclick = function () { deleteRecord(selectedID); };
+      detailDialog.addEventListener('close', function () { detailAudio.pause(); detailAudio.removeAttribute('src'); selectedID = ''; });
+      document.getElementById('logoutButton').onclick = async function () {
+        try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: withCSRFHeaders({}) }); } catch (e) {}
+        window.location.replace('/login');
+      };
+      document.getElementById('themeButton').onclick = function () {
+        var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next); try { localStorage.setItem('chatgpt_web_voice_theme_v1', next); } catch (e) {}
+      };
+      loadRecords(false);
+    })();
+  </script>
+</body>
+</html>

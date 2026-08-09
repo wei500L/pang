@@ -82,6 +82,39 @@ func (db *DB) migrate() error {
 			UNIQUE(conversation_id, client_id)
 		)`,
 		"CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation ON conversation_messages(conversation_id, id)",
+		// recordings stores microphone recording metadata only. Encoded audio bytes
+		// live under VOICE_DATA_DIR/recordings so large media never enters SQLite.
+		`CREATE TABLE IF NOT EXISTS recordings (
+			id TEXT PRIMARY KEY,
+			owner TEXT NOT NULL,
+			conversation_id TEXT NOT NULL DEFAULT '',
+			conversation_title TEXT NOT NULL DEFAULT '',
+			voice_session_id TEXT NOT NULL DEFAULT '',
+			mime_type TEXT NOT NULL,
+			file_ext TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'recording',
+			chunk_count INTEGER NOT NULL DEFAULT 0,
+			byte_size INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at TEXT NOT NULL DEFAULT ''
+		)`,
+		"CREATE INDEX IF NOT EXISTS idx_recordings_created ON recordings(created_at DESC, id DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_recordings_owner ON recordings(owner, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_recordings_conversation ON recordings(conversation_id, created_at DESC)",
+		`CREATE TABLE IF NOT EXISTS recording_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+			client_id TEXT NOT NULL,
+			role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+			content TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE(recording_id, client_id)
+		)`,
+		"CREATE INDEX IF NOT EXISTS idx_recording_messages_recording ON recording_messages(recording_id, id)",
 		// Browser login sessions survive process restarts (token hash only).
 		`CREATE TABLE IF NOT EXISTS auth_sessions (
 			token_hash TEXT PRIMARY KEY,

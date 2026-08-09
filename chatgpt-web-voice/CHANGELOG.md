@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added fail-open microphone recording for the built-in `/voice` page: 24 kbps `MediaRecorder` audio is uploaded in 5-second bounded chunks without changing the direct WebRTC path. SQLite stores recording metadata and transcript snapshots, files live under `data/recordings`, and the new admin `/records` page supports search, playback, transcript review, and deletion.
 - Voice page titles: first user utterance during a call; fetch chatgpt.com title once on hangup only. Manual renames persist `conversations.title_locked` so hangup never overwrites after refresh.
 - Downstream image upload credentials: `POST /v1/voice/sessions/{id}/uploads` issues a sticky-account Azure SAS ticket for the live `voice_session_id`; clients PUT image bytes directly (never through the gateway). `POST .../uploads/{file_id}/complete` finalizes via chatgpt.com without storing `file_id` or image bytes. Admin mirrors: `/api/voice/session/uploads` and `.../complete`.
 - Voice page: AI playback volume slider (0–300%) with Web Audio `GainNode` software boost, so mobile in-call routes that ignore media volume keys can still be made louder; preference is stored in `localStorage`.
