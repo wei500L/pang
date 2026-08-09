@@ -19,7 +19,10 @@ type publicRateEntry struct {
 }
 
 const (
-	publicConversationWriteLimit = 120
+	// Already-open pages from the previous release can emit roughly four
+	// caption updates per second. Keep them working during rollout; newly served
+	// pages coalesce updates to a much lower write rate.
+	publicConversationWriteLimit = 300
 	publicRecordingChunkLimit    = 60
 	maxPublicRateEntries         = 4096
 	rateSweepInterval            = 10 * time.Second
