@@ -11,11 +11,16 @@ const SPRING_PROFILES = {
   mid: [78, 17],
   high: [104, 20],
   flux: [136, 23],
+  centroid: [54, 14],
   speech: [44, 14],
   presence: [30, 11],
   state: [48, 14],
   assistant: [36, 12],
+  user: [62, 16],
   listening: [30, 11],
+  thinking: [36, 12],
+  interrupted: [168, 27],
+  error: [44, 15],
   muted: [56, 15],
 };
 
@@ -33,11 +38,16 @@ const vertexShader = /* glsl */ `
   uniform float uMid;
   uniform float uHigh;
   uniform float uFlux;
+  uniform float uCentroid;
   uniform float uSpeech;
   uniform float uPresence;
   uniform float uStateEnergy;
   uniform float uAssistantMix;
+  uniform float uUserSpeaking;
   uniform float uListening;
+  uniform float uThinking;
+  uniform float uInterrupted;
+  uniform float uError;
   uniform float uMuted;
   uniform float uMotionScale;
   uniform float uLayer;
@@ -87,15 +97,17 @@ const vertexShader = /* glsl */ `
     vec3 normal = decodeOct(normalOct);
     float phase = particleSeed.x * 6.2831853;
     float secondary = particleSeed.y * 6.2831853;
+    float spectralCenter = clamp(uCentroid, 0.0, 1.0);
+    float centroidBias = spectralCenter * 2.0 - 1.0;
 
     vec3 reference = abs(normal.y) > 0.85 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
     vec3 tangent = normalize(cross(normal, reference));
     vec3 bitangent = normalize(cross(normal, tangent));
 
-    float activeMotion = 1.0 - uMuted * 0.84;
+    float activeMotion = (1.0 - uMuted * 0.84) * (1.0 - uError * 0.72);
     float breath = sin(uTime * 1.5708 + phase * 0.08) * 0.5 + 0.5;
     float slowFlow = sin(dot(basePosition, vec3(3.1, 4.4, 2.7)) + uTime * 0.34 + secondary);
-    basePosition *= 1.0 + uLow * 0.012 * activeMotion;
+    basePosition *= 1.0 + uLow * 0.012 * activeMotion - uThinking * 0.0025;
     basePosition.z *= 1.0 + uLow * 0.14 * activeMotion;
     vec3 idleOffset = normal * (breath - 0.5) * mix(0.0045, 0.009, activeMotion);
     idleOffset += tangent * slowFlow * 0.0032 * activeMotion + bitangent * cos(uTime * 0.31 + phase) * 0.0026 * activeMotion;
@@ -107,23 +119,31 @@ const vertexShader = /* glsl */ `
     float pulse = clamp(pulseCrest + pulseWake * 0.72 + localImpact * 0.85, 0.0, 1.5);
     float broadWave = sin(basePosition.y * 7.2 + basePosition.x * 2.2 - uTime * (0.82 + uLow * 0.78));
     float assistantRhythm = sin(basePosition.x * 5.6 - basePosition.y * 2.4 - uTime * (1.05 + uMid * 1.08));
+    vec3 userAxis = normalize(vec3(0.82, centroidBias * 0.46, 0.28));
+    float userRhythm = sin(dot(basePosition, userAxis) * mix(5.2, 9.8, spectralCenter) - uTime * (1.18 + uMid * 1.46) + phase * 0.06);
+    float thinkingRhythm = sin(length(basePosition.xy * vec2(0.88, 1.12)) * 9.2 - uTime * 1.22 + secondary * 0.09);
     float surfaceFlow = sin(dot(basePosition, vec3(5.8, 4.2, 2.8)) - uTime * (0.92 + uMid * 1.18) + phase * 0.1);
     float fineWave = sin(dot(basePosition, vec3(13.0, 9.2, 6.4)) - uTime * 3.8 + secondary);
     float pressure = uLow * (0.006 + uEnergy * 0.015) * broadWave * activeMotion;
     float propagated = uMid * (pulseCrest * 0.052 + pulseWake * 0.024 + localImpact * 0.034) * activeMotion;
     float residualMotion = uPresence * 0.0036 * sin(dot(basePosition, vec3(4.1, 6.0, 3.4)) - uTime * 0.95) * activeMotion;
-    vec3 voiceOffset = normal * (pressure + propagated + residualMotion);
+    float userSurface = uUserSpeaking * (uMid * 0.010 + uEnergy * 0.0055) * userRhythm * activeMotion;
+    float thinkingGather = uThinking * (0.0038 + uStateEnergy * 0.006) * thinkingRhythm;
+    vec3 voiceOffset = normal * (pressure + propagated + residualMotion + userSurface - thinkingGather);
     voiceOffset += tangent * uMid * (0.007 + pulse * 0.014) * mix(surfaceFlow, assistantRhythm, uAssistantMix) * activeMotion;
     voiceOffset += bitangent * (uHigh * 0.005 + uFlux * 0.010 * pulse) * fineWave * activeMotion;
+    voiceOffset += (tangent * thinkingRhythm + bitangent * cos(thinkingRhythm + phase)) * uThinking * 0.0038;
+    voiceOffset *= 1.0 - uInterrupted * 0.78;
 
     float detachThreshold = mix(0.994, 0.978, clamp(uEnergy * 0.58 + uFlux * 0.42, 0.0, 1.0));
     float detachMask = step(detachThreshold, particleSeed.x) * smoothstep(0.20, 0.76, uEnergy + uAttack * 0.38 + uFlux * 0.42);
     float detachEnvelope = detachMask * uSpeech * (uEnergy * 0.012 + uAttack * 0.010 + uFlux * 0.008 + pulse * 0.012) * activeMotion;
     detachEnvelope *= 0.76 + 0.24 * sin(uTime * 1.8 + secondary);
+    detachEnvelope *= max(0.0, 1.0 - uThinking * 0.72 - uInterrupted * 0.92);
     vec3 detachDirection = normalize(normal * 0.78 + tangent * sin(secondary) * 0.32 + bitangent * cos(phase) * 0.22);
     vec3 detachOffset = detachDirection * detachEnvelope;
     float dustMask = step(0.983, particleSeed.y) * (1.0 - uMuted * 0.72);
-    float dustDrift = 0.035 + 0.035 * (sin(uTime * 0.42 + phase) * 0.5 + 0.5);
+    float dustDrift = 0.035 + uHigh * 0.018 + 0.035 * (sin(uTime * 0.42 + phase) * 0.5 + 0.5);
     vec3 ambientDustOffset = dustMask * (normal * dustDrift + tangent * sin(uTime * 0.31 + secondary) * 0.018 + bitangent * cos(uTime * 0.27 + phase) * 0.014);
 
     vec3 transformedPosition = basePosition + (idleOffset + voiceOffset + detachOffset + ambientDustOffset) * uMotionScale;
@@ -136,11 +156,14 @@ const vertexShader = /* glsl */ `
     float energySize = 1.0 + localEnergy * 0.32 + uAttack * localImpact * 0.18;
     float haloSize = mix(1.0, 2.05 + detachMask * 0.7, uLayer);
     float particleScale = mix(0.84, 1.12, particleSeed.y);
-    gl_PointSize = clamp(uPointSize * uPixelRatio * perspective * energySize * haloSize * particleScale, 1.0, 14.0);
+    float depthCue = smoothstep(-0.82, 0.82, transformedPosition.z);
+    float depthScale = mix(0.78, 1.22, depthCue);
+    gl_PointSize = clamp(uPointSize * uPixelRatio * perspective * energySize * haloSize * particleScale * depthScale, 1.0, 14.0);
 
     vec3 sourceColor = pow(max(particleColor.rgb, vec3(0.0)), vec3(2.2));
     float sourceLuma = dot(sourceColor, vec3(0.2126, 0.7152, 0.0722));
-    float sculpturalLight = 0.76 + max(dot(normal, normalize(vec3(-0.32, 0.48, 0.82))), 0.0) * 0.38;
+    vec3 lightDirection = normalize(vec3(-0.44 + spectralCenter * 0.24, 0.5 + uHigh * 0.06, 0.82));
+    float sculpturalLight = (0.72 + max(dot(normal, lightDirection), 0.0) * 0.42) * mix(0.8, 1.1, depthCue);
     vec3 brandOrange = vec3(1.0, 0.16, 0.018);
     vec3 champagne = vec3(0.72, 0.39, 0.13);
     vec3 softGold = vec3(0.94, 0.57, 0.24);
@@ -150,13 +173,16 @@ const vertexShader = /* glsl */ `
     float sageMask = smoothstep(0.91, 0.985, particleSeed.x) * (0.55 + uListening * 0.45);
     brandColor = mix(brandColor, sage, sageMask * (0.34 + uListening * 0.42));
     vec3 energyColor = mix(brandOrange, softGold, clamp(uAssistantMix * 0.72 + uHigh * 0.24, 0.0, 0.9));
+    energyColor = mix(energyColor, softGold, uThinking * 0.24);
+    brandColor = mix(brandColor, vec3(0.50, 0.43, 0.34), uError * 0.42);
     float colorLift = clamp(uEnergy * 0.12 + localEnergy * 0.32 + uStateEnergy * 0.08, 0.0, 0.56);
     vColor = mix(brandColor, energyColor, colorLift) * sculpturalLight * mix(0.92, 1.05, sourceLuma);
+    vColor = mix(vColor, sage * 0.92, uInterrupted * 0.12);
     vEnergy = clamp(uEnergy * 0.36 + localEnergy * 0.88 + uPresence * 0.10, 0.0, 1.45);
     vHalo = max(detachMask * (0.22 + uEnergy + uFlux * 0.4), pulseCrest * 0.54 + pulseWake * 0.18 + localImpact * 0.78 + uFlux * pulse * 0.26);
     float sourceAlpha = max(0.1, particleColor.a);
     float densityVariation = mix(0.82, 1.0, particleSeed.x);
-    vAlpha = sourceAlpha * densityVariation * mix(0.76 + uStateEnergy * 0.05, 0.09 + vHalo * 0.34, uLayer) * mix(1.0, 0.82, uMuted);
+    vAlpha = sourceAlpha * densityVariation * mix(0.76 + uStateEnergy * 0.05, 0.09 + vHalo * 0.34, uLayer) * mix(0.72, 1.08, depthCue) * mix(1.0, 0.82, uMuted);
   }
 `;
 
@@ -222,6 +248,9 @@ class AgentVisual {
       assistant: this.extractors.assistant.snapshot(false),
     };
     this.state = "idle";
+    this.visualState = "idle";
+    this.container.dataset.visualState = "idle";
+    document.body.dataset.agentVisualState = "idle";
     this.muted = false;
     this.disposed = false;
     this.visible = !document.hidden;
@@ -234,8 +263,9 @@ class AgentVisual {
     this.lastPulseAt = -Infinity;
     this.pulses = Array.from({ length: PULSE_COUNT }, () => ({ anchor: new THREE.Vector3(), startedAt: -100, amplitude: 0 }));
     this.springs = Object.fromEntries([
-      "energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "state", "assistant", "listening", "muted",
+      "energy", "attack", "low", "mid", "high", "flux", "centroid", "speech", "presence", "state", "assistant", "user", "listening", "thinking", "interrupted", "error", "muted",
     ].map((key) => [key, new SpringValue()]));
+    this.springs.centroid.reset(0.38);
     this.springEntries = Object.entries(this.springs);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.motionScale = this.reducedMotion.matches ? 0.38 : 1;
@@ -322,11 +352,16 @@ class AgentVisual {
       uMid: { value: 0 },
       uHigh: { value: 0 },
       uFlux: { value: 0 },
+      uCentroid: { value: 0.38 },
       uSpeech: { value: 0 },
       uPresence: { value: 0 },
       uStateEnergy: { value: 0 },
       uAssistantMix: { value: 0 },
+      uUserSpeaking: { value: 0 },
       uListening: { value: 0 },
+      uThinking: { value: 0 },
+      uInterrupted: { value: 0 },
+      uError: { value: 0 },
       uMuted: { value: 0 },
       uMotionScale: { value: this.motionScale },
       uLightTheme: { value: 0 },
@@ -357,6 +392,7 @@ class AgentVisual {
     this.materials = [coreMaterial, haloMaterial];
     this.group.add(new THREE.Points(geometry, coreMaterial), new THREE.Points(geometry, haloMaterial));
     this.anchors = (this.manifest.anchors || [[0, 0, 0]]).map((anchor) => new THREE.Vector3(anchor[0], anchor[1], anchor[2]));
+    this.anchorsByX = [...this.anchors].sort((a, b) => a.x - b.x);
   }
 
   observeLayout() {
@@ -408,11 +444,51 @@ class AgentVisual {
   }
 
   setState(state) {
-    this.state = state || "idle";
-    const levels = { idle: 0, connecting: 0.1, listening: 0.08, "assistant-speaking": 0.2, error: 0.12 };
+    const nextState = state || "idle";
+    const previousState = this.state;
+    this.state = nextState;
+    if (nextState === "interrupted" && previousState !== "interrupted") {
+      this.featureFrames.assistant = this.extractors.assistant.reset();
+      this.springs.assistant.target = 0;
+    }
+    const levels = {
+      idle: 0,
+      connecting: 0.1,
+      listening: 0.08,
+      "user-speaking": 0.18,
+      thinking: 0.12,
+      "assistant-speaking": 0.2,
+      interrupted: 0.06,
+      error: 0.12,
+    };
     this.springs.state.target = levels[this.state] ?? 0;
-    this.springs.listening.target = this.state === "listening" ? 1 : 0;
+    this.springs.listening.target = this.state === "listening" || this.state === "interrupted" ? 1 : 0;
+    this.springs.thinking.target = this.state === "thinking" ? 1 : 0;
+    this.springs.interrupted.target = this.state === "interrupted" ? 1 : 0;
+    this.springs.error.target = this.state === "error" ? 1 : 0;
     this.updateAudioTargets();
+    this.updateVisualState();
+  }
+
+  resolveVisualState() {
+    const mic = this.featureFrames.mic;
+    const assistant = this.featureFrames.assistant;
+    if (this.state === "error") return "error";
+    if (this.state === "interrupted") return "interrupted";
+    if (this.state === "connecting") return "connecting";
+    if (this.state === "assistant-speaking" || assistant.speechActive) return "assistant-speaking";
+    if (!this.muted && mic.speechActive) return "user-speaking";
+    if (this.state === "thinking") return "thinking";
+    if (this.state === "listening") return "listening";
+    return "idle";
+  }
+
+  updateVisualState() {
+    const next = this.resolveVisualState();
+    if (next === this.visualState) return;
+    this.visualState = next;
+    this.container.dataset.visualState = next;
+    document.body.dataset.agentVisualState = next;
   }
 
   processMicFrame(timeData, frequencyData, sampleRate, timestamp) {
@@ -434,12 +510,13 @@ class AgentVisual {
     const transient = Math.max(features.attack, features.spectralFlux * 1.15);
     if (features.onset) {
       const roleScale = role === "assistant" ? 0.72 : 0.9;
-      this.triggerPulse(Math.max(0.24, transient * roleScale, features.energy * 0.7));
+      this.triggerPulse(Math.max(0.24, transient * roleScale, features.energy * 0.7), features.spectralCentroid, role);
       this.lastPulseAt = now;
     } else if (features.speechActive && features.spectralFlux > 0.18 && now - this.lastPulseAt > 280) {
-      this.triggerPulse(Math.max(0.18, features.spectralFlux * 0.68, features.attack * 0.56));
+      this.triggerPulse(Math.max(0.18, features.spectralFlux * 0.68, features.attack * 0.56), features.spectralCentroid, role);
       this.lastPulseAt = now;
     }
+    this.updateVisualState();
     return features;
   }
 
@@ -448,8 +525,9 @@ class AgentVisual {
     const assistant = this.featureFrames.assistant;
     const micPresence = this.muted ? 0 : Math.min(1, mic.energy * 1.35 + (mic.speechActive ? 0.32 : 0));
     const assistantPresence = Math.min(1, assistant.energy * 1.42 + (assistant.speechActive ? 0.38 : 0));
+    const assistantSuppressed = this.state === "interrupted";
     const assistantBias = this.state === "assistant-speaking" ? 0.24 : 0;
-    const assistantWeight = Math.min(1, assistantPresence + assistantBias);
+    const assistantWeight = assistantSuppressed ? 0 : Math.min(1, assistantPresence + assistantBias);
     const micWeight = Math.min(1, micPresence * (1 - assistantWeight * 0.72));
     const total = Math.max(0.0001, micWeight + assistantWeight);
     const assistantMix = Math.min(1, assistantWeight / total);
@@ -461,33 +539,43 @@ class AgentVisual {
     this.springs.mid.target = blend("mid");
     this.springs.high.target = blend("high");
     this.springs.flux.target = Math.min(1, (mic.spectralFlux * micWeight + assistant.spectralFlux * assistantWeight) / total);
-    this.springs.speech.target = mic.speechActive || assistant.speechActive ? 1 : 0;
-    this.springs.presence.target = Math.max(micPresence, assistantPresence);
+    this.springs.centroid.target = blend("spectralCentroid") || 0.38;
+    this.springs.speech.target = mic.speechActive || (!assistantSuppressed && assistant.speechActive) ? 1 : 0;
+    this.springs.presence.target = Math.max(micPresence, assistantSuppressed ? 0 : assistantPresence);
     this.springs.assistant.target = assistantMix;
+    this.springs.user.target = !this.muted && mic.speechActive && assistantWeight < 0.45 ? 1 : 0;
     this.springs.muted.target = this.muted ? 1 : 0;
+    this.updateVisualState();
   }
 
   setMuted(muted) {
     this.muted = Boolean(muted);
     if (this.muted) this.featureFrames.mic = this.extractors.mic.reset();
     this.updateAudioTargets();
+    this.updateVisualState();
   }
 
-  triggerPulse(amplitude) {
-    if (!this.anchors?.length) return;
+  triggerPulse(amplitude, centroid = 0.5, role = "mic") {
+    if (!this.anchorsByX?.length) return;
     const pulse = this.pulses[this.pulseCursor % PULSE_COUNT];
-    const anchor = this.anchors[this.anchorCursor % this.anchors.length];
+    const direction = role === "assistant" ? 1 - centroid : centroid;
+    const baseIndex = Math.round(Math.max(0, Math.min(1, direction)) * (this.anchorsByX.length - 1));
+    const spread = (this.anchorCursor % 3) - 1;
+    const index = Math.max(0, Math.min(this.anchorsByX.length - 1, baseIndex + spread));
+    const anchor = this.anchorsByX[index];
     pulse.anchor.copy(anchor);
     pulse.startedAt = this.sharedUniforms?.uTime.value || 0;
     pulse.amplitude = Math.min(1.2, amplitude);
     this.pulseCursor += 1;
-    this.anchorCursor = (this.anchorCursor + 3) % this.anchors.length;
+    this.anchorCursor += 1;
   }
 
   resetAudio() {
     this.featureFrames.mic = this.extractors.mic.reset();
     this.featureFrames.assistant = this.extractors.assistant.reset();
-    for (const key of ["energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "assistant"]) this.springs[key].target = 0;
+    for (const key of ["energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "assistant", "user"]) this.springs[key].target = 0;
+    this.springs.centroid.target = 0.38;
+    this.updateVisualState();
   }
 
   schedule() {
@@ -516,11 +604,16 @@ class AgentVisual {
     this.sharedUniforms.uMid.value = Math.max(0, values.mid);
     this.sharedUniforms.uHigh.value = Math.max(0, values.high);
     this.sharedUniforms.uFlux.value = Math.max(0, values.flux);
+    this.sharedUniforms.uCentroid.value = Math.max(0, Math.min(1, values.centroid));
     this.sharedUniforms.uSpeech.value = Math.max(0, values.speech);
     this.sharedUniforms.uPresence.value = Math.max(0, values.presence);
     this.sharedUniforms.uStateEnergy.value = Math.max(0, values.state);
     this.sharedUniforms.uAssistantMix.value = Math.max(0, Math.min(1, values.assistant));
+    this.sharedUniforms.uUserSpeaking.value = Math.max(0, Math.min(1, values.user));
     this.sharedUniforms.uListening.value = Math.max(0, Math.min(1, values.listening));
+    this.sharedUniforms.uThinking.value = Math.max(0, Math.min(1, values.thinking));
+    this.sharedUniforms.uInterrupted.value = Math.max(0, Math.min(1, values.interrupted));
+    this.sharedUniforms.uError.value = Math.max(0, Math.min(1, values.error));
     this.sharedUniforms.uMuted.value = Math.max(0, Math.min(1, values.muted));
     for (let i = 0; i < PULSE_COUNT; i += 1) {
       const pulse = this.pulses[i];
@@ -559,6 +652,7 @@ class AgentVisual {
     this.materials?.forEach((material) => material.dispose());
     this.renderer?.dispose();
     this.renderer?.domElement.remove();
+    if (document.body.dataset.agentVisualState === this.visualState) delete document.body.dataset.agentVisualState;
   }
 }
 

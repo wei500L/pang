@@ -23,16 +23,16 @@ function applyParallax() {
   pointerY += (targetY - pointerY) * 0.065;
   const nearlyStill = Math.abs(targetX - pointerX) < 0.008 && Math.abs(targetY - pointerY) < 0.008;
 
-  root.style.setProperty("--room-parallax-x", `${(pointerX * 10).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-y", `${(pointerY * 7).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-soft-x", `${(pointerX * 3.2).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-soft-y", `${(pointerY * 2.4).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-shadow-x", `${(pointerX * -3.8).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-shadow-y", `${(pointerY * -2.8).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-fore-x", `${(pointerX * 7.2).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-fore-y", `${(pointerY * 5.2).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-particle-x", `${(pointerX * 2.1).toFixed(2)}px`);
-  root.style.setProperty("--room-parallax-particle-y", `${(pointerY * 1.6).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-x", `${(pointerX * 13).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-y", `${(pointerY * 9.5).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-soft-x", `${(pointerX * 4.6).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-soft-y", `${(pointerY * 3.4).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-shadow-x", `${(pointerX * -5.6).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-shadow-y", `${(pointerY * -4).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-fore-x", `${(pointerX * 10).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-fore-y", `${(pointerY * 7.2).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-particle-x", `${(pointerX * 3).toFixed(2)}px`);
+  root.style.setProperty("--room-parallax-particle-y", `${(pointerY * 2.2).toFixed(2)}px`);
 
   if (!nearlyStill) raf = requestAnimationFrame(applyParallax);
 }

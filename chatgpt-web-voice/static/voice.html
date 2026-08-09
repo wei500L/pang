@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>语音通话</title>
-  <link rel="icon" type="image/png" href="/static/assets/voice-room/pangdonglai-badge-transparent.png" />
+  <link rel="icon" type="image/png" href="/static/assets/voice-room/pangdonglai-dl-monogram.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -1777,7 +1777,10 @@
       <button type="button" id="btnSettings" class="icon-button brand-settings-button" data-i18n-title="openSettings" data-i18n-aria="openSettings" title="打开设置" aria-label="打开设置">
         <span class="material-symbols-rounded" aria-hidden="true">tune</span>
       </button>
-      <img class="pangdonglai-badge" src="/static/assets/voice-room/pangdonglai-badge-transparent.png" alt="DL 胖东来" />
+      <a class="pangdonglai-signature" href="/voice" aria-label="胖东来">
+        <img class="pangdonglai-monogram" src="/static/assets/voice-room/pangdonglai-dl-monogram.png" alt="" aria-hidden="true" />
+        <span>胖东来</span>
+      </a>
     </div>
     <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
   </header>
@@ -4213,7 +4216,12 @@
     remoteSpeakingUntil = 0;
     // Scheme A: do not locally mute AI on barge-in. Upstream stop_speaking owns
     // stopping the voice track; local suppress was latching muted until speaker toggle.
-    setUIKey('listening', 'statusListening', 'subInterrupted');
+    setUIKey('interrupted', 'statusListening', 'subInterrupted');
+    setTimeout(function () {
+      if (inCall && lastUiState.state === 'interrupted') {
+        setUIKey('listening', 'statusListening', 'subInterrupted');
+      }
+    }, 560);
     try {
       sendDcEvent({ type: 'action_request', payload: { action: 'stop_speaking' } });
       log(requireUnmuted ? 'auto interrupt' : 'text interrupt', 'stop_speaking');
@@ -4726,7 +4734,7 @@
     if (!text) { toast(t('toastNeedContent')); return; }
     sending = true;
     updateComposerState();
-    setUIKey('speaking', 'statusProcessing', 'subDcSubmit');
+    setUIKey('thinking', 'statusProcessing', 'subDcSubmit');
     try {
       // Same barge-in as voice: stop current AI speech before the new user text lands.
       // Mic may be muted while typing — do not require unmuted.
@@ -5043,7 +5051,11 @@
                 markAssistantListening();
                 setUIKey('listening', 'statusListening', 'subListening');
               }
-              if (st === 'speaking' || st === 'responding') {
+              if (st === 'responding') {
+                markAssistantSpeaking();
+                setUIKey('thinking', 'statusProcessing', 'subReplying');
+              }
+              if (st === 'speaking') {
                 markAssistantSpeaking();
                 setUIKey('speaking', 'statusSpeaking', 'subReplying');
               }

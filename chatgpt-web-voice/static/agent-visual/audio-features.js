@@ -19,6 +19,24 @@ function bandEnergy(data, sampleRate, fftSize, lowHz, highHz) {
   return Math.sqrt(sum / (end - start));
 }
 
+function spectralCentroid(data, sampleRate, noiseGate = 0) {
+  const nyquist = sampleRate * 0.5;
+  let weightedHz = 0;
+  let total = 0;
+  for (let i = 1; i < data.length; i += 1) {
+    const magnitude = Math.max(0, data[i] / 255 - noiseGate);
+    const power = magnitude * magnitude;
+    if (power <= 0) continue;
+    const hz = (i / data.length) * nyquist;
+    if (hz < 80 || hz > Math.min(7600, nyquist * 0.92)) continue;
+    weightedHz += hz * power;
+    total += power;
+  }
+  if (total <= 1e-7) return 0.38;
+  const centroidHz = weightedHz / total;
+  return clamp01((centroidHz - 180) / 5020);
+}
+
 export class AudioFeatureExtractor {
   constructor() {
     this.reset();
@@ -31,7 +49,9 @@ export class AudioFeatureExtractor {
     this.mid = 0;
     this.high = 0;
     this.flux = 0;
+    this.centroid = 0.38;
     this.noiseFloor = 0.008;
+    this.adaptivePeak = 0.055;
     this.speechActive = false;
     this.speechHoldUntil = 0;
     this.lastOnsetAt = -Infinity;
@@ -61,9 +81,18 @@ export class AudioFeatureExtractor {
     }
 
     const activeFloor = this.noiseFloor * 1.25 + 0.0035;
-    const range = Math.max(0.035, this.noiseFloor * 4.5);
-    const rawEnergy = clamp01((rms - activeFloor) / range);
-    const targetEnergy = Math.pow(rawEnergy, 0.72);
+    const peakFloor = activeFloor + 0.024;
+    const peakTarget = Math.max(peakFloor, rms);
+    const peakSpeed = peakTarget > this.adaptivePeak ? 9.5 : 0.32;
+    const peakMix = 1 - Math.exp(-dt * peakSpeed);
+    this.adaptivePeak += (peakTarget - this.adaptivePeak) * peakMix;
+    this.adaptivePeak = Math.max(peakFloor, Math.min(0.38, this.adaptivePeak));
+    const adaptiveRange = Math.max(0.022, this.adaptivePeak - activeFloor);
+    const normalizedEnergy = Math.max(0, (rms - activeFloor) / adaptiveRange);
+    const softLimitedEnergy = 1 - Math.exp(-normalizedEnergy * 1.45);
+    const normalizedLimit = 1 - Math.exp(-1.45);
+    const rawEnergy = clamp01(softLimitedEnergy / normalizedLimit);
+    const targetEnergy = Math.pow(rawEnergy, 0.74);
 
     const fftSize = Math.max(2, frequencyData.length * 2);
     const lowRaw = bandEnergy(frequencyData, sampleRate, fftSize, 80, 280);
@@ -74,6 +103,8 @@ export class AudioFeatureExtractor {
     const lowTarget = clamp01((lowRaw - spectralGate) * 3.1) * gateMix;
     const midTarget = clamp01((midRaw - spectralGate) * 2.75) * gateMix;
     const highTarget = clamp01((highRaw - spectralGate) * 3.4) * gateMix;
+    const centroidRaw = spectralCentroid(frequencyData, sampleRate, spectralGate * 0.44);
+    const centroidTarget = 0.38 + (centroidRaw - 0.38) * Math.min(1, targetEnergy * 0.9 + gateMix * 0.1);
 
     if (!this.previousSpectrum || this.previousSpectrum.length !== frequencyData.length) {
       this.previousSpectrum = new Float32Array(frequencyData.length);
@@ -92,7 +123,7 @@ export class AudioFeatureExtractor {
     const wasSpeaking = this.speechActive;
     if (targetEnergy > 0.12 || attackTarget > 0.2) {
       this.speechActive = true;
-      this.speechHoldUntil = now + 260;
+      this.speechHoldUntil = now + 360;
     } else if (targetEnergy < 0.052 && now > this.speechHoldUntil) {
       this.speechActive = false;
     }
@@ -107,6 +138,7 @@ export class AudioFeatureExtractor {
     this.mid = smooth(this.mid, midTarget, dt, 0.045, 0.31);
     this.high = smooth(this.high, highTarget, dt, 0.025, 0.22);
     this.flux = smooth(this.flux, fluxTarget, dt, 0.025, 0.2);
+    this.centroid = smooth(this.centroid, centroidTarget, dt, 0.07, 0.24);
     return this.snapshot(onset);
   }
 
@@ -118,11 +150,13 @@ export class AudioFeatureExtractor {
       mid: this.mid,
       high: this.high,
       spectralFlux: this.flux,
+      spectralCentroid: this.centroid,
       speechActive: this.speechActive,
       onset: Boolean(onset),
       noiseFloor: this.noiseFloor,
+      adaptivePeak: this.adaptivePeak,
     };
   }
 }
 
-export { bandEnergy, clamp01 };
+export { bandEnergy, clamp01, spectralCentroid };

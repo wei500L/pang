@@ -216,13 +216,44 @@ body.app-shell a:focus-visible {
   mix-blend-mode: multiply;
 }
 
-.pangdonglai-badge {
-  width: 136px;
-  height: 58px;
+.pangdonglai-signature {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  margin-left: 8px;
+  padding: 4px 14px 4px 8px;
+  border: 1px solid rgba(104, 86, 69, 0.22);
+  border-radius: 999px;
+  color: #5c5751;
+  background: rgba(255, 253, 249, 0.52);
+  box-shadow: 0 7px 18px rgba(91, 70, 48, 0.055), inset 0 1px rgba(255, 255, 255, 0.76);
+  text-decoration: none;
+  transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.pangdonglai-monogram {
+  width: 48px;
+  height: auto;
   display: block;
-  margin-left: 7px;
-  object-fit: cover;
-  mix-blend-mode: multiply;
+  flex: 0 0 auto;
+}
+
+.pangdonglai-signature span {
+  font-family: "Noto Sans SC", "PingFang SC", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.pangdonglai-signature:hover {
+  color: #4f4a44;
+  border-color: rgba(104, 86, 69, 0.3);
+  background: rgba(255, 253, 249, 0.74);
+  box-shadow: 0 10px 22px rgba(91, 70, 48, 0.075), inset 0 1px rgba(255, 255, 255, 0.82);
+  transform: translateY(-1px);
 }
 
 .brand-menu-button { display: none !important; }
@@ -524,6 +555,53 @@ body.app-shell[data-voice-state="speaking"] .agent-visual-layer::before {
   transform: translate(-50%, -50%) scale(0.92);
 }
 
+body.app-shell[data-agent-visual-state="user-speaking"] .agent-visual-layer::before {
+  border-color: rgba(233, 125, 49, 0.22);
+  box-shadow: 0 0 0 54px rgba(229, 145, 80, 0.026), 0 0 0 112px rgba(112, 153, 129, 0.013);
+  opacity: 0.88;
+  transform: translate(-50%, -50%) scale(0.91);
+}
+
+body.app-shell[data-voice-state="thinking"] .agent-visual-layer::before {
+  border-color: rgba(193, 151, 102, 0.16);
+  box-shadow: 0 0 0 46px rgba(193, 151, 102, 0.022), 0 0 0 94px rgba(193, 151, 102, 0.011);
+  opacity: 0.7;
+  transform: translate(-50%, -50%) scale(0.85);
+}
+
+body.app-shell[data-voice-state="interrupted"] .agent-visual-layer::before {
+  border-color: rgba(91, 148, 119, 0.2);
+  box-shadow: 0 0 0 50px rgba(91, 148, 119, 0.022), 0 0 0 100px rgba(91, 148, 119, 0.01);
+  opacity: 0.76;
+  transform: translate(-50%, -50%) scale(0.875);
+  transition-duration: 190ms, 190ms, 260ms, 190ms;
+}
+
+.room-air {
+  transition: opacity 620ms ease, transform 820ms cubic-bezier(.22, 1, .36, 1), filter 620ms ease;
+}
+
+body.app-shell[data-agent-visual-state="user-speaking"] .room-air {
+  opacity: 0.88;
+  transform: translate3d(-5px, 2px, 0) scale(1.018);
+}
+
+body.app-shell[data-agent-visual-state="assistant-speaking"] .room-air {
+  opacity: 0.9;
+  transform: translate3d(6px, -2px, 0) scale(1.022);
+}
+
+body.app-shell[data-agent-visual-state="thinking"] .room-air {
+  opacity: 0.6;
+  transform: scale(0.988);
+}
+
+body.app-shell[data-agent-visual-state="error"] .room-sunwash {
+  animation: none;
+  filter: saturate(0.72);
+  opacity: 0.56;
+}
+
 body.app-shell .agent-visual-layer::after {
   content: "";
   position: absolute;
@@ -695,8 +773,17 @@ body.app-shell .caption-log-line {
   transition: opacity 420ms ease, transform 520ms cubic-bezier(.22, 1, .36, 1);
 }
 
-body.app-shell .caption-log-line.is-recent { opacity: 0.28; }
-body.app-shell .caption-log-line.is-current { opacity: 1; transform: translateY(0); }
+body.app-shell .caption-log-line.is-recent {
+  z-index: 1;
+  opacity: 0.34;
+  filter: saturate(0.82) contrast(0.92) blur(0.28px);
+}
+body.app-shell .caption-log-line.is-current {
+  z-index: 3;
+  opacity: 1;
+  filter: none;
+  transform: translateY(0);
+}
 
 body.app-shell .caption-log-line.assistant {
   left: 31%;
@@ -839,6 +926,21 @@ body.app-shell .orb.listening {
 body.app-shell .orb.speaking {
   background: var(--room-orange);
   box-shadow: 0 0 0 4px rgba(243, 111, 10, 0.1);
+}
+
+body.app-shell .orb.thinking {
+  background: #c99b68;
+  box-shadow: 0 0 0 4px rgba(201, 155, 104, 0.1);
+}
+
+body.app-shell .orb.interrupted {
+  background: var(--room-sage);
+  box-shadow: 0 0 0 4px rgba(111, 155, 131, 0.11);
+}
+
+body.app-shell .orb.error {
+  background: #ad7563;
+  box-shadow: 0 0 0 4px rgba(173, 117, 99, 0.1);
 }
 
 body.app-shell .voice-wave {
@@ -990,6 +1092,17 @@ body.app-shell .btn-main:hover:not(:disabled) {
   box-shadow: 0 17px 36px rgba(226, 92, 0, 0.28), 0 0 0 8px rgba(243, 111, 10, 0.065), inset 0 1px rgba(255, 255, 255, 0.4);
 }
 
+body.app-shell .btn-main:active:not(:disabled) {
+  filter: brightness(0.985);
+  transform: translateY(1px) scale(0.965);
+  box-shadow: 0 7px 17px rgba(226, 92, 0, 0.2), 0 0 0 5px rgba(243, 111, 10, 0.045), inset 0 2px 5px rgba(138, 55, 0, 0.12);
+}
+
+body.app-shell[data-agent-visual-state="user-speaking"] .composer-dock {
+  border-color: rgba(188, 119, 64, 0.24);
+  box-shadow: 0 26px 74px rgba(98, 74, 46, 0.13), 0 3px 12px rgba(98, 74, 46, 0.065), inset 0 1px rgba(255, 255, 255, 0.84);
+}
+
 body.app-shell .btn-main.is-live,
 body.app-shell .btn-main.stop {
   background: radial-gradient(circle at 32% 22%, #ff9639, var(--room-orange) 58%, var(--room-orange-deep));
@@ -1095,6 +1208,7 @@ body.app-shell .settings-panel {
   box-shadow: 0 28px 90px rgba(75, 56, 37, 0.18);
   backdrop-filter: blur(28px) saturate(1.06);
   -webkit-backdrop-filter: blur(28px) saturate(1.06);
+  transform: translateX(calc(100% + 20px));
 }
 
 body.app-shell .settings-head,
@@ -1127,7 +1241,8 @@ body.app-shell .session-context-menu button:hover { background: rgba(243, 111, 1
     padding: 0 30px 0 42px;
   }
   .brand-navigation { gap: 32px; }
-  .pangdonglai-badge { width: 116px; }
+  .pangdonglai-signature { min-height: 40px; padding-right: 12px; }
+  .pangdonglai-monogram { width: 44px; }
   body.app-shell .workspace { grid-template-columns: 96px minmax(0, 1fr); }
   body.app-shell .welcome-copy { left: 54px; width: min(360px, 34vw); }
   body.app-shell .welcome-capabilities span { min-width: 112px; padding-inline: 12px; }
@@ -1153,7 +1268,9 @@ body.app-shell .session-context-menu button:hover { background: rgba(243, 111, 1
   .brand-menu-button { display: inline-grid !important; }
   .freedom-wordmark { width: 132px; }
   .brand-navigation { display: none; }
-  .pangdonglai-badge { width: 100px; height: 48px; }
+  .pangdonglai-signature { min-height: 38px; padding: 3px 10px 3px 6px; }
+  .pangdonglai-monogram { width: 40px; }
+  .pangdonglai-signature span { font-size: 11px; }
   body.app-shell .brand-header .header-chip { display: none; }
 
   body.app-shell .workspace {
@@ -1220,7 +1337,7 @@ body.app-shell .session-context-menu button:hover { background: rgba(243, 111, 1
 }
 
 @media (max-width: 620px) {
-  .pangdonglai-badge { display: none; }
+  .pangdonglai-signature { display: none; }
   .brand-header-actions { gap: 4px; }
   body.app-shell .brand-header .brand-settings-button { width: 34px; height: 34px; }
 
