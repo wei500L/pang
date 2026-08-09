@@ -1,0 +1,36 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来相关书籍(1)\\心向阳光-于东来.pdf",
+  "start_page": 1,
+  "end_page": 437,
+  "maximum_bytes": 50331648,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0167.pdf",
+      "first_page": 1,
+      "last_page": 167,
+      "page_count": 167,
+      "bytes": 44137517
+    },
+    {
+      "filename": "part-002-p0168-p0318.pdf",
+      "first_page": 168,
+      "last_page": 318,
+      "page_count": 151,
+      "bytes": 39744678
+    },
+    {
+      "filename": "part-003-p0319-p0405.pdf",
+      "first_page": 319,
+      "last_page": 405,
+      "page_count": 87,
+      "bytes": 42326734
+    },
+    {
+      "filename": "part-004-p0406-p0437.pdf",
+      "first_page": 406,
+      "last_page": 437,
+      "page_count": 32,
+      "bytes": 10577077
+    }
+  ]
+}

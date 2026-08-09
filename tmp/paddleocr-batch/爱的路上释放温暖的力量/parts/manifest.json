@@ -1,0 +1,22 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来相关书籍(1)\\爱的路上释放温暖的力量.pdf",
+  "start_page": 1,
+  "end_page": 223,
+  "maximum_bytes": 20971520,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0174.pdf",
+      "first_page": 1,
+      "last_page": 174,
+      "page_count": 174,
+      "bytes": 12529182
+    },
+    {
+      "filename": "part-002-p0175-p0223.pdf",
+      "first_page": 175,
+      "last_page": 223,
+      "page_count": 49,
+      "bytes": 3597970
+    }
+  ]
+}

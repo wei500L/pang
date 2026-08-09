@@ -1,0 +1,22 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来文化理念\\胖东来企业文化理念.pdf",
+  "start_page": 1,
+  "end_page": 23,
+  "maximum_bytes": 50331648,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0017.pdf",
+      "first_page": 1,
+      "last_page": 17,
+      "page_count": 17,
+      "bytes": 42570442
+    },
+    {
+      "filename": "part-002-p0018-p0023.pdf",
+      "first_page": 18,
+      "last_page": 23,
+      "page_count": 6,
+      "bytes": 20156824
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来相关书籍(1)\\美好之路（于东来）.pdf",
+  "start_page": 352,
+  "end_page": 382,
+  "maximum_bytes": 10485760,
+  "parts": [
+    {
+      "filename": "part-001-p0352-p0359.pdf",
+      "first_page": 352,
+      "last_page": 359,
+      "page_count": 8,
+      "bytes": 8472229
+    },
+    {
+      "filename": "part-002-p0360-p0368.pdf",
+      "first_page": 360,
+      "last_page": 368,
+      "page_count": 9,
+      "bytes": 8982393
+    },
+    {
+      "filename": "part-003-p0369-p0376.pdf",
+      "first_page": 369,
+      "last_page": 376,
+      "page_count": 8,
+      "bytes": 8878954
+    },
+    {
+      "filename": "part-004-p0377-p0382.pdf",
+      "first_page": 377,
+      "last_page": 382,
+      "page_count": 6,
+      "bytes": 4671221
+    }
+  ]
+}

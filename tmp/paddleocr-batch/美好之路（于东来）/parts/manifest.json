@@ -1,0 +1,162 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来相关书籍(1)\\美好之路（于东来）.pdf",
+  "start_page": 1,
+  "end_page": 382,
+  "maximum_bytes": 20971520,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0017.pdf",
+      "first_page": 1,
+      "last_page": 17,
+      "page_count": 17,
+      "bytes": 17836429
+    },
+    {
+      "filename": "part-002-p0018-p0034.pdf",
+      "first_page": 18,
+      "last_page": 34,
+      "page_count": 17,
+      "bytes": 18080628
+    },
+    {
+      "filename": "part-003-p0035-p0051.pdf",
+      "first_page": 35,
+      "last_page": 51,
+      "page_count": 17,
+      "bytes": 17605049
+    },
+    {
+      "filename": "part-004-p0052-p0064.pdf",
+      "first_page": 52,
+      "last_page": 64,
+      "page_count": 13,
+      "bytes": 18433849
+    },
+    {
+      "filename": "part-005-p0065-p0082.pdf",
+      "first_page": 65,
+      "last_page": 82,
+      "page_count": 18,
+      "bytes": 17933522
+    },
+    {
+      "filename": "part-006-p0083-p0099.pdf",
+      "first_page": 83,
+      "last_page": 99,
+      "page_count": 17,
+      "bytes": 17584200
+    },
+    {
+      "filename": "part-007-p0100-p0117.pdf",
+      "first_page": 100,
+      "last_page": 117,
+      "page_count": 18,
+      "bytes": 18440981
+    },
+    {
+      "filename": "part-008-p0118-p0134.pdf",
+      "first_page": 118,
+      "last_page": 134,
+      "page_count": 17,
+      "bytes": 17824868
+    },
+    {
+      "filename": "part-009-p0135-p0152.pdf",
+      "first_page": 135,
+      "last_page": 152,
+      "page_count": 18,
+      "bytes": 18217685
+    },
+    {
+      "filename": "part-010-p0153-p0170.pdf",
+      "first_page": 153,
+      "last_page": 170,
+      "page_count": 18,
+      "bytes": 18272560
+    },
+    {
+      "filename": "part-011-p0171-p0188.pdf",
+      "first_page": 171,
+      "last_page": 188,
+      "page_count": 18,
+      "bytes": 17647550
+    },
+    {
+      "filename": "part-012-p0189-p0207.pdf",
+      "first_page": 189,
+      "last_page": 207,
+      "page_count": 19,
+      "bytes": 17673416
+    },
+    {
+      "filename": "part-013-p0208-p0220.pdf",
+      "first_page": 208,
+      "last_page": 220,
+      "page_count": 13,
+      "bytes": 17925560
+    },
+    {
+      "filename": "part-014-p0221-p0236.pdf",
+      "first_page": 221,
+      "last_page": 236,
+      "page_count": 16,
+      "bytes": 17399213
+    },
+    {
+      "filename": "part-015-p0237-p0255.pdf",
+      "first_page": 237,
+      "last_page": 255,
+      "page_count": 19,
+      "bytes": 18399083
+    },
+    {
+      "filename": "part-016-p0256-p0274.pdf",
+      "first_page": 256,
+      "last_page": 274,
+      "page_count": 19,
+      "bytes": 17579184
+    },
+    {
+      "filename": "part-017-p0275-p0293.pdf",
+      "first_page": 275,
+      "last_page": 293,
+      "page_count": 19,
+      "bytes": 18144609
+    },
+    {
+      "filename": "part-018-p0294-p0312.pdf",
+      "first_page": 294,
+      "last_page": 312,
+      "page_count": 19,
+      "bytes": 18099492
+    },
+    {
+      "filename": "part-019-p0313-p0332.pdf",
+      "first_page": 313,
+      "last_page": 332,
+      "page_count": 20,
+      "bytes": 17862244
+    },
+    {
+      "filename": "part-020-p0333-p0351.pdf",
+      "first_page": 333,
+      "last_page": 351,
+      "page_count": 19,
+      "bytes": 18274860
+    },
+    {
+      "filename": "part-021-p0352-p0369.pdf",
+      "first_page": 352,
+      "last_page": 369,
+      "page_count": 18,
+      "bytes": 18369131
+    },
+    {
+      "filename": "part-022-p0370-p0382.pdf",
+      "first_page": 370,
+      "last_page": 382,
+      "page_count": 13,
+      "bytes": 12635060
+    }
+  ]
+}

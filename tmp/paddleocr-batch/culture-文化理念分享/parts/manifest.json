@@ -1,0 +1,36 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来文化理念\\文化理念分享.pdf",
+  "start_page": 1,
+  "end_page": 44,
+  "maximum_bytes": 50331648,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0008.pdf",
+      "first_page": 1,
+      "last_page": 8,
+      "page_count": 8,
+      "bytes": 43603629
+    },
+    {
+      "filename": "part-002-p0009-p0024.pdf",
+      "first_page": 9,
+      "last_page": 24,
+      "page_count": 16,
+      "bytes": 41578690
+    },
+    {
+      "filename": "part-003-p0025-p0037.pdf",
+      "first_page": 25,
+      "last_page": 37,
+      "page_count": 13,
+      "bytes": 42799892
+    },
+    {
+      "filename": "part-004-p0038-p0044.pdf",
+      "first_page": 38,
+      "last_page": 44,
+      "page_count": 7,
+      "bytes": 20399427
+    }
+  ]
+}

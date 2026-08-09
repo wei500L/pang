@@ -1,0 +1,29 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来文化理念\\新员工文化培训——关于工作.pdf",
+  "start_page": 1,
+  "end_page": 26,
+  "maximum_bytes": 50331648,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0009.pdf",
+      "first_page": 1,
+      "last_page": 9,
+      "page_count": 9,
+      "bytes": 41283645
+    },
+    {
+      "filename": "part-002-p0010-p0020.pdf",
+      "first_page": 10,
+      "last_page": 20,
+      "page_count": 11,
+      "bytes": 35714089
+    },
+    {
+      "filename": "part-003-p0021-p0026.pdf",
+      "first_page": 21,
+      "last_page": 26,
+      "page_count": 6,
+      "bytes": 30300766
+    }
+  ]
+}

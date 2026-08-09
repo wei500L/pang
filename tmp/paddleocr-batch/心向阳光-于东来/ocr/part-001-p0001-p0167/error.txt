@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "D:\PANG\scripts\paddleocr_batch.py", line 260, in process_part
+    job_id = submit_part(file_path)
+  File "D:\PANG\scripts\paddleocr_batch.py", line 172, in submit_part
+    response = request_with_retry(
+        "POST",
+    ...<3 lines>...
+        files={"file": (file_path.name, stream, "application/pdf")},
+    )
+  File "D:\PANG\scripts\paddleocr_batch.py", line 49, in request_with_retry
+    raise RuntimeError(f"Request failed after {attempts} attempts: {last_error}")
+RuntimeError: Request failed after 6 attempts: HTTP 400: {"traceId":"b6f85f50-dfcd-44b0-8a1d-c909d86e4b7a","code":10004,"msg":"文件格式不支持"}

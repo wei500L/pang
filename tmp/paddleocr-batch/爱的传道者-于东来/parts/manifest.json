@@ -1,0 +1,50 @@
+{
+  "source": "D:\\pang\\pdf\\胖东来相关书籍(1)\\爱的传道者-于东来.pdf",
+  "start_page": 1,
+  "end_page": 314,
+  "maximum_bytes": 20971520,
+  "parts": [
+    {
+      "filename": "part-001-p0001-p0103.pdf",
+      "first_page": 1,
+      "last_page": 103,
+      "page_count": 103,
+      "bytes": 15149567
+    },
+    {
+      "filename": "part-002-p0104-p0204.pdf",
+      "first_page": 104,
+      "last_page": 204,
+      "page_count": 101,
+      "bytes": 13250077
+    },
+    {
+      "filename": "part-003-p0205-p0279.pdf",
+      "first_page": 205,
+      "last_page": 279,
+      "page_count": 75,
+      "bytes": 15850071
+    },
+    {
+      "filename": "part-004-p0280-p0294.pdf",
+      "first_page": 280,
+      "last_page": 294,
+      "page_count": 15,
+      "bytes": 17791005
+    },
+    {
+      "filename": "part-005-p0295-p0308.pdf",
+      "first_page": 295,
+      "last_page": 308,
+      "page_count": 14,
+      "bytes": 17337900
+    },
+    {
+      "filename": "part-006-p0309-p0314.pdf",
+      "first_page": 309,
+      "last_page": 314,
+      "page_count": 6,
+      "bytes": 6921751
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "D:\PANG\scripts\paddleocr_page.py", line 154, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "D:\PANG\scripts\paddleocr_page.py", line 139, in main
+    job_id = submit_page(file_path)
+  File "D:\PANG\scripts\paddleocr_page.py", line 42, in submit_page
+    response = request_with_retry("POST", JOB_URL, headers=headers, data=data, files=files)
+  File "D:\PANG\scripts\paddleocr_page.py", line 34, in request_with_retry
+    raise RuntimeError(f"Request failed after {attempts} attempts: {last_error}")
+RuntimeError: Request failed after 4 attempts: HTTP 400: {"traceId":"f0b712f9-f84b-4e69-b15d-89b7e48748cc","code":10010,"msg":"任务提交队列已满，请稍后重试"}
+Traceback (most recent call last):
+  File "D:\PANG\scripts\run_paddleocr_pages.py", line 61, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "D:\PANG\scripts\run_paddleocr_pages.py", line 52, in main
+    subprocess.run(
+    ~~~~~~~~~~~~~~^
+        [sys.executable, str(script), str(page_pdf), str(output_dir)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        check=True,
+        ^^^^^^^^^^^
+        env=os.environ.copy(),
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Python314\Lib\subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['C:\\Python314\\python.exe', 'D:\\PANG\\scripts\\paddleocr_page.py', 'tmp\\paddleocr\\胖东来故事手册（二）\\pages\\page-0104.pdf', 'tmp\\paddleocr\\胖东来故事手册（二）\\ocr\\page-0104']' returned non-zero exit status 1.

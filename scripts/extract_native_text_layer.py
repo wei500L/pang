@@ -100,7 +100,12 @@ def append_paragraph(output: list[str], fragments: list[str]) -> None:
 
 def should_continue(previous: Line, current: Line, previous_page: int) -> bool:
     if current.page != previous_page:
-        return previous.text[-1:] not in TERMINAL_PUNCTUATION
+        structural = re.compile(r"^(?:[【•]|[（(]?[一二三四五六七八九十]+[）)、.]|\d+[、.])")
+        return (
+            previous.text[-1:] not in TERMINAL_PUNCTUATION
+            and not structural.match(previous.text)
+            and not structural.match(current.text)
+        )
     # Lines that are part of the same visual paragraph are tightly stacked.
     if current.y0 - previous.y1 <= 8.5:
         return True

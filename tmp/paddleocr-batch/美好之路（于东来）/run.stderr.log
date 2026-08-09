@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "D:\PANG\scripts\paddleocr_batch.py", line 303, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "D:\PANG\scripts\paddleocr_batch.py", line 298, in main
+    process_part(parts_dir, ocr_root, part)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\PANG\scripts\paddleocr_batch.py", line 266, in process_part
+    save_result(wait_for_result(job_id), output_dir, first_page, expected_pages)
+                ~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\PANG\scripts\paddleocr_batch.py", line 197, in wait_for_result
+    raise RuntimeError(data.get("errorMsg", "OCR job failed"))
+RuntimeError: OCR·þÎñÇëÇóÊ§°Ü£¬×´Ì¬Âë 500
