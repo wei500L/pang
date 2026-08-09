@@ -15,7 +15,8 @@
 - 实时语音（`/realtime/wm` + WebRTC + DataChannel）
 - 通话中文本与字幕（DataChannel）
 - 自动打断（barge-in）
-- 管理端：账号池、下游 API Key、会话元数据、内置语音页
+- 公开语音页：游客匿名 Cookie 隔离历史，无需登录
+- 管理端：Turnstile 登录、账号池、下游 API Key、会话元数据
 - 下游 `/v1` 接入：只持 API Key + `voice_session_id` 即可建连 / 恢复
 - 粘性账号与上游续聊线索由网关持久化，不向下游暴露池内账号信息
 - 内置语音页使用由 GLB 表面采样生成的 GPU 粒子 Agent，并复用同一麦克风流实时驱动
@@ -64,14 +65,14 @@ go run ./cmd/server
 bash ./scripts/dev.sh
 ```
 
-登录后常用页面：
+常用页面：
 
 | 路径 | 说明 |
 |---|---|
-| `/voice` | 内置语音工作台 |
-| `/accounts` | ChatGPT Web 账号池 |
-| `/keys` | 下游 API Key（完整密钥只显示一次） |
-| `/sessions` | 网关语音会话元数据（无聊天正文） |
+| `/voice` | 公开语音工作台，游客无需登录 |
+| `/accounts` | 管理员：ChatGPT Web 账号池 |
+| `/keys` | 管理员：下游 API Key（完整密钥只显示一次） |
+| `/sessions` | 管理员：网关语音会话元数据（无聊天正文） |
 
 编译二进制：
 
@@ -155,6 +156,8 @@ docker compose down
 |---|---|
 | `VOICE_AUTH_USERNAME` | 管理端登录用户名 |
 | `VOICE_AUTH_PASSWORD` | 管理端登录密码 |
+| `VOICE_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 站点密钥；开发环境留空时使用测试密钥 |
+| `VOICE_TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 服务端密钥；生产环境必须显式提供 |
 | `VOICE_TOKEN_ENCRYPTION_KEY` | 密封账号 token 的 32 字节密钥（hex 或 base64）；丢失后已存 token 无法解密 |
 
 ### 开发环境可改
@@ -175,6 +178,9 @@ docker compose down
 | `VOICE_LOGIN_MAX_FAILURES` | `8` | 登录失败锁定阈值 |
 | `VOICE_LOGIN_WINDOW_SECONDS` | `900` | 登录失败统计窗口 |
 | `VOICE_LOGIN_LOCKOUT_SECONDS` | `900` | 登录锁定时长 |
+| `VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE` | `10` | 每个游客 IP 每分钟高成本语音请求上限 |
+| `VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE` | `60` | 每个游客 IP 每分钟其他写请求上限 |
+| `VOICE_TRUST_CLOUDFLARE_IP` | `false` | 源站仅允许 Cloudflare 访问时，信任 `CF-Connecting-IP` |
 | `VOICE_SESSION_TTL_SECONDS` | `180` | 语音内存绑定 TTL |
 | `VOICE_MAX_ACCOUNT_ATTEMPTS` | `4` | 单次建连最多尝试账号数 |
 | `VOICE_UPSTREAM_TRANSPORT` | `tls-client` | 可换成 `curl-impersonate` |
@@ -191,6 +197,8 @@ docker compose down
 | `VOICE_AUTH_USERNAME` | `your-admin` | 必填 |
 | `VOICE_AUTH_PASSWORD` | 长随机口令 | 必填 |
 | `VOICE_TOKEN_ENCRYPTION_KEY` | `openssl rand -hex 32` | 必填，且后续保持不变 |
+| `VOICE_TURNSTILE_SITE_KEY` | Turnstile site key | 必填 |
+| `VOICE_TURNSTILE_SECRET_KEY` | Turnstile secret key | 必填 |
 | `VOICE_TLS` | `false` | 有 Caddy/Nginx 时关闭容器内 TLS |
 
 可选覆盖：
@@ -204,6 +212,8 @@ docker compose down
 | `VOICE_SESSION_TTL_SECONDS` | 调整语音内存绑定 TTL |
 | `VOICE_LOGIN_MAX_FAILURES` / `VOICE_LOGIN_WINDOW_SECONDS` / `VOICE_LOGIN_LOCKOUT_SECONDS` | 调整登录锁定策略 |
 | `VOICE_MAX_ACCOUNT_ATTEMPTS` | 调整单次建连尝试账号数 |
+| `VOICE_TRUST_CLOUDFLARE_IP` | Cloudflare 代理且源站已封闭时设为 `true` |
+| `VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE` / `VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE` | 调整游客限流 |
 
 ### 固定默认（一般不用写）
 
@@ -353,7 +363,7 @@ curl -X POST "https://voice.example.com/v1/voice/sessions/$VS_ID/uploads/$FILE_I
 下游 / 内置语音页
   mic + RTCPeerConnection + DataChannel(oai-events)
         │
-        │  Authorization: Bearer / 管理端登录
+        │  Bearer API Key / 管理员会话 / 匿名游客 Cookie
         │  POST offer_sdp → answer_sdp
         ▼
 Gateway (Go)
@@ -372,17 +382,17 @@ chatgpt.com + Azure WebRTC
 | `cmd/server` | 进程入口 |
 | `internal/app` | 依赖装配、静态页、TLS |
 | `internal/api` | HTTP 适配（管理端 + `/v1`） |
-| `internal/auth` | 浏览器会话 / API Key |
+| `internal/auth` | 匿名游客、管理员会话、Turnstile / API Key |
 | `internal/accounts` | 账号池（token 密封） |
 | `internal/voice` | `/realtime/wm` 代理与会话绑定 |
 | `internal/callsessions` | 网关会话元数据（无聊天正文） |
-| `internal/conversations` | 内置语音页文本会话（管理端） |
+| `internal/conversations` | 按游客/管理员 owner 隔离的内置语音页文本会话 |
 | `internal/apikeys` | 下游 Key（仅存 hash） |
 
 ### 会话与恢复
 
 - 网关为每次建连分配 `voice_session_id`（`vs_...`）。
-- 成功建连后写入 `call_sessions`：调用方（admin / 下游 key）、粘性 `account_id`、上游 id、语音参数等。
+- 成功建连后写入 `call_sessions`：调用方（guest / admin / 下游 key）、粘性 `account_id`、上游 id、语音参数等。
 - 挂断释放**内存绑定**；再拨时凭 `voice_session_id` 从 SQLite 恢复粘性账号与上游线索。
 - 管理端 `/sessions` 可查看元数据，**不展示聊天内容**。下游 `/v1` 本身也不落库聊天正文。
 

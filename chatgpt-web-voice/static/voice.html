@@ -1760,7 +1760,7 @@
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
       </button>
       <a class="freedom-wordmark" href="/voice" aria-label="自由·爱">
-        <img src="/static/assets/voice-room/freedom-love-wordmark-transparent.png" alt="自由·爱，从心出发，向善而行" />
+        <img src="/static/assets/voice-room/freedom-love-wordmark-retina.png" alt="自由·爱，从心出发，向善而行" />
       </a>
     </div>
     <nav class="brand-navigation" aria-label="品牌导航">
@@ -1778,8 +1778,7 @@
         <span class="material-symbols-rounded" aria-hidden="true">tune</span>
       </button>
       <a class="pangdonglai-signature" href="/voice" aria-label="胖东来">
-        <img class="pangdonglai-monogram" src="/static/assets/voice-room/pangdonglai-dl-monogram.png" alt="" aria-hidden="true" />
-        <span>胖东来</span>
+        <img class="pangdonglai-brandmark" src="/static/assets/voice-room/pangdonglai-brandmark-retina.png" alt="" aria-hidden="true" />
       </a>
     </div>
     <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
@@ -1919,7 +1918,7 @@
             </label>
           </div>
         </section>
-        <section class="settings-section">
+        <section id="adminGatewaySection" class="settings-section" hidden>
           <div class="settings-section-title" data-i18n="accountSettings">网关</div>
           <div class="settings-card">
             <div class="settings-actions">
@@ -1927,6 +1926,14 @@
               <a href="/keys" class="btn-ghost" data-i18n="apiKeys">API 密钥</a>
               <a href="/sessions" class="btn-ghost">会话记录</a>
               <button type="button" id="btnLogout" class="btn-ghost danger" data-i18n="logout">退出登录</button>
+            </div>
+          </div>
+        </section>
+        <section id="guestGatewaySection" class="settings-section" hidden>
+          <div class="settings-section-title" data-i18n="accountSettings">网关</div>
+          <div class="settings-card">
+            <div class="settings-actions">
+              <a href="/login?next=%2Fkeys" class="btn-ghost" data-i18n="adminLogin">管理员登录</a>
             </div>
           </div>
         </section>
@@ -1995,6 +2002,8 @@
   var remoteWaveBars = [];
   var micSelect = document.getElementById('micSelect');
   var btnLogout = document.getElementById('btnLogout');
+  var adminGatewaySection = document.getElementById('adminGatewaySection');
+  var guestGatewaySection = document.getElementById('guestGatewaySection');
   var voiceEl = document.getElementById('voice');
   var languageEl = document.getElementById('language');
   var languageDropdown = document.getElementById('languageDropdown');
@@ -2257,6 +2266,7 @@
       accountPool: '账号池',
       apiKeys: 'API 密钥',
       logout: '退出登录',
+      adminLogin: '管理员登录',
       voiceLabel: '音色',
       languageLabel: '通话语言',
       interruptLabel: '自动打断灵敏度',
@@ -2432,6 +2442,7 @@
       accountPool: 'Accounts',
       apiKeys: 'API Keys',
       logout: 'Log out',
+      adminLogin: 'Administrator sign in',
       voiceLabel: 'Voice',
       languageLabel: 'Spoken language',
       interruptLabel: 'Barge-in sensitivity',
@@ -4675,11 +4686,19 @@
       options.headers = withCSRFHeaders(options.headers);
     }
     var response = await fetch(url, options);
-    if (response.status === 401) {
-      window.location.replace('/login');
-      throw new Error(t('errAuthExpired'));
-    }
     return response;
+  }
+
+  async function loadAuthSession() {
+    var isAdmin = false;
+    try {
+      var response = await fetch('/api/auth/session', { credentials: 'same-origin' });
+      var data = await response.json();
+      isAdmin = !!(response.ok && data.authenticated && data.role === 'admin');
+    } catch (e) {}
+    if (adminGatewaySection) adminGatewaySection.hidden = !isAdmin;
+    if (guestGatewaySection) guestGatewaySection.hidden = isAdmin;
+    return isAdmin;
   }
 
   // Release gateway in-memory account binding. Durable SQLite metadata remains
@@ -5562,14 +5581,16 @@
     updateTranscriptMeta();
     window.addEventListener('pagehide', releaseOnPageExit);
     window.addEventListener('beforeunload', releaseOnPageExit);
-    btnLogout.onclick = async function () {
-      try {
-        await stopCall(false);
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: withCSRFHeaders({}) });
-      } finally {
-        window.location.replace('/login');
-      }
-    };
+    if (btnLogout) {
+      btnLogout.onclick = async function () {
+        try {
+          await stopCall(false);
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: withCSRFHeaders({}) });
+        } finally {
+          window.location.replace('/voice');
+        }
+      };
+    }
     try {
       var savedVoice = normalizeVoice(localStorage.getItem(voiceStorageKey) || voiceEl.value);
       voiceEl.value = savedVoice;
@@ -5599,6 +5620,7 @@
     setUIKey('idle', 'statusReady', 'subReady');
     updateComposerState();
     initializeConversationStore().catch(function () {});
+    loadAuthSession().catch(function () {});
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
       navigator.mediaDevices.enumerateDevices().then(refreshMics).catch(function () {});
     }

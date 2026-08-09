@@ -84,6 +84,13 @@ func New(deps Dependencies) *Server {
 
 // Register mounts routes on mux.
 func (s *Server) Register(mux *http.ServeMux) {
+	s.RegisterPublic(mux)
+	s.RegisterAdmin(mux)
+}
+
+// RegisterPublic mounts the browser voice workspace APIs. Authentication is
+// supplied by the outer public-principal middleware.
+func (s *Server) RegisterPublic(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/voice/health", s.health)
 	mux.HandleFunc("POST /api/voice/session", s.session)
 	mux.HandleFunc("POST /api/voice/session/release", s.release)
@@ -92,6 +99,16 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/voice/session/uploads", s.sessionImageUpload)
 	mux.HandleFunc("POST /api/voice/session/uploads/{file_id}/complete", s.sessionImageUploadComplete)
 	mux.HandleFunc("GET /api/voice/config", s.voiceConfig)
+	mux.HandleFunc("GET /api/conversations", s.listConversations)
+	mux.HandleFunc("POST /api/conversations", s.createConversation)
+	mux.HandleFunc("GET /api/conversations/{id}", s.getConversation)
+	mux.HandleFunc("PATCH /api/conversations/{id}", s.updateConversation)
+	mux.HandleFunc("DELETE /api/conversations/{id}", s.deleteConversation)
+	mux.HandleFunc("POST /api/conversations/{id}/messages", s.upsertConversationMessage)
+}
+
+// RegisterAdmin mounts account-pool, API-key, and gateway-session management.
+func (s *Server) RegisterAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/accounts", s.listAccounts)
 	mux.HandleFunc("POST /api/accounts", s.createAccount)
 	mux.HandleFunc("PUT /api/accounts/{id}", s.updateAccount)
@@ -103,12 +120,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/keys/{id}", s.deleteAPIKey)
 	mux.HandleFunc("GET /api/call-sessions", s.listCallSessions)
 	mux.HandleFunc("DELETE /api/call-sessions/{id}", s.deleteCallSession)
-	mux.HandleFunc("GET /api/conversations", s.listConversations)
-	mux.HandleFunc("POST /api/conversations", s.createConversation)
-	mux.HandleFunc("GET /api/conversations/{id}", s.getConversation)
-	mux.HandleFunc("PATCH /api/conversations/{id}", s.updateConversation)
-	mux.HandleFunc("DELETE /api/conversations/{id}", s.deleteConversation)
-	mux.HandleFunc("POST /api/conversations/{id}/messages", s.upsertConversationMessage)
 }
 
 // RegisterDownstream mounts the API-key-only public integration surface.

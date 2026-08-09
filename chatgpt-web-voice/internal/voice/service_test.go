@@ -33,6 +33,13 @@ func TestNormalizeVoice(t *testing.T) {
 	}
 }
 
+func TestClassifyGuestCaller(t *testing.T) {
+	kind, label, apiKeyID := classifyCaller("guest:0123456789abcdef")
+	if kind != "guest" || label != "guest:01234567" || apiKeyID != 0 {
+		t.Fatalf("unexpected guest classification: kind=%q label=%q key=%d", kind, label, apiKeyID)
+	}
+}
+
 func TestConfigAndSessionOptionValidation(t *testing.T) {
 	cfg := Config()
 	if cfg.Version != "v1" || cfg.Defaults.Voice != "cove" || len(cfg.Voices) != 9 || len(cfg.Languages) < 60 {

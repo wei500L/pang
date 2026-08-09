@@ -43,6 +43,36 @@ func TestLoadDefaultsToDevelopmentEnvironment(t *testing.T) {
 	if cfg.Environment != EnvironmentDevelopment {
 		t.Fatalf("unexpected default environment: %q", cfg.Environment)
 	}
+	if cfg.TurnstileSiteKey != DevelopmentTurnstileSiteKey || cfg.TurnstileSecretKey != DevelopmentTurnstileSecretKey {
+		t.Fatalf("unexpected development turnstile defaults: site=%q secret=%q", cfg.TurnstileSiteKey, cfg.TurnstileSecretKey)
+	}
+}
+
+func TestProductionRequiresTurnstileKeys(t *testing.T) {
+	cfg := Config{
+		Environment:         EnvironmentProduction,
+		AuthUsername:        "admin",
+		AuthPassword:        "secret",
+		TokenEncryptionKey:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		DatabaseFile:        "voice.db",
+		AuthSessionTTL:      60,
+		LoginMaxFailures:    8,
+		LoginWindowSeconds:  900,
+		LoginLockoutSeconds: 900,
+		UpstreamTransport:   TransportTLSClient,
+		TLSProfile:          DefaultTLSProfile,
+		DeviceID:            "device-test",
+		SessionID:           "session-test",
+		LogFormat:           "json",
+		LogLevel:            "info",
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "VOICE_TURNSTILE_SITE_KEY") {
+		t.Fatalf("expected missing turnstile site key error, got %v", err)
+	}
+	cfg.TurnstileSiteKey = "site-key"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "VOICE_TURNSTILE_SECRET_KEY") {
+		t.Fatalf("expected missing turnstile secret key error, got %v", err)
+	}
 }
 
 func TestLoadDefaultsTo8090(t *testing.T) {
@@ -93,6 +123,8 @@ func TestValidateRejectsUnknownEnvironment(t *testing.T) {
 		Environment:         "staging",
 		AuthUsername:        "admin",
 		AuthPassword:        "secret",
+		TurnstileSiteKey:    "site-key",
+		TurnstileSecretKey:  "secret-key",
 		TokenEncryptionKey:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		DatabaseFile:        "voice.db",
 		AuthSessionTTL:      60,
@@ -146,6 +178,8 @@ func TestValidateRejectsUnknownTransport(t *testing.T) {
 		Environment:         EnvironmentDevelopment,
 		AuthUsername:        "admin",
 		AuthPassword:        "secret",
+		TurnstileSiteKey:    "site-key",
+		TurnstileSecretKey:  "secret-key",
 		TokenEncryptionKey:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		DatabaseFile:        "voice.db",
 		AuthSessionTTL:      60,
@@ -179,7 +213,6 @@ func TestLoadPreservesPasswordWhitespace(t *testing.T) {
 	}
 }
 
-
 func TestValidateProductionForbidsSkipSSLVerify(t *testing.T) {
 	cfg := Config{
 		Environment:         EnvironmentProduction,
@@ -189,6 +222,8 @@ func TestValidateProductionForbidsSkipSSLVerify(t *testing.T) {
 		SessionID:           "session-test",
 		AuthUsername:        "admin",
 		AuthPassword:        "secret",
+		TurnstileSiteKey:    "site-key",
+		TurnstileSecretKey:  "secret-key",
 		TokenEncryptionKey:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		DatabaseFile:        "voice.db",
 		AuthSessionTTL:      60,

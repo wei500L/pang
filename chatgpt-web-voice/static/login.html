@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/app.css" />
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script>
     (function () {
       try {
@@ -42,6 +43,8 @@
       <label for="password" id="passwordLabel">密码</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
 
+      <div id="turnstileWidget" class="turnstile-widget" aria-label="人机验证"></div>
+
       <div class="remember-row">
         <label class="remember-option" for="remember">
           <input id="remember" name="remember" type="checkbox" />
@@ -70,6 +73,9 @@
       var locale = 'zh';
       var btnUiLocale = document.getElementById('btnUiLocale');
       var btnUiTheme = document.getElementById('btnUiTheme');
+      var turnstileWidget = document.getElementById('turnstileWidget');
+      var turnstileToken = '';
+      var turnstileWidgetId = null;
 
       function updateToggleButtons() {
         if (btnUiLocale) {
@@ -143,6 +149,30 @@
         connectionNote.classList.add('show');
       }
 
+      async function initializeTurnstile() {
+        var response = await fetch('/api/auth/config', { credentials: 'same-origin' });
+        var config = await response.json();
+        var siteKey = String(config.turnstile_site_key || '').trim();
+        if (!siteKey) throw new Error('captcha unavailable');
+        for (var attempt = 0; attempt < 100 && !window.turnstile; attempt++) {
+          await new Promise(function (resolve) { setTimeout(resolve, 50); });
+        }
+        if (!window.turnstile) throw new Error('captcha unavailable');
+        turnstileWidgetId = window.turnstile.render(turnstileWidget, {
+          sitekey: siteKey,
+          theme: theme === 'dark' ? 'dark' : 'light',
+          callback: function (token) { turnstileToken = token || ''; },
+          'expired-callback': function () { turnstileToken = ''; },
+          'error-callback': function () { turnstileToken = ''; }
+        });
+      }
+
+      initializeTurnstile().catch(function () {
+        message.textContent = locale === 'en'
+          ? 'Human verification could not be loaded. Please refresh and try again.'
+          : '人机验证加载失败，请刷新页面后重试。';
+      });
+
       form.addEventListener('submit', async function (event) {
         event.preventDefault();
         message.textContent = '';
@@ -150,6 +180,10 @@
         var password = document.getElementById('password').value;
         if (!username || !password) {
           message.textContent = '请输入用户名和密码。';
+          return;
+        }
+        if (!turnstileToken) {
+          message.textContent = locale === 'en' ? 'Please complete human verification.' : '请先完成人机验证。';
           return;
         }
 
@@ -160,15 +194,23 @@
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ username: username, password: password, remember: !!(remember && remember.checked) })
+            body: JSON.stringify({
+              username: username,
+              password: password,
+              remember: !!(remember && remember.checked),
+              turnstile_token: turnstileToken,
+              next: new URLSearchParams(window.location.search).get('next') || ''
+            })
           });
           var data = {};
           try { data = await response.json(); } catch (_) {}
           if (!response.ok) {
             message.textContent = (data.detail && data.detail.error) || '登录失败，请检查用户名和密码。';
+            turnstileToken = '';
+            if (window.turnstile && turnstileWidgetId !== null) window.turnstile.reset(turnstileWidgetId);
             return;
           }
-          window.location.replace('/voice');
+          window.location.replace(data.redirect || '/keys');
         } catch (_) {
           message.textContent = '无法连接网关，请确认服务仍在运行。';
         } finally {

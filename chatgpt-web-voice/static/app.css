@@ -1256,6 +1256,13 @@ body.login-page .remember-row {
   margin-top: 16px;
 }
 
+body.login-page .turnstile-widget {
+  min-height: 65px;
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+}
+
 body.login-page .remember-option {
   display: inline-flex;
   align-items: center;

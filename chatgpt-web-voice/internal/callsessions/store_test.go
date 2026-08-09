@@ -34,6 +34,15 @@ func TestCallSessionUpsertUpdateAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.Upsert(Session{
+		VoiceSessionID: "vs_guest_1",
+		Owner:          "guest:abcdef",
+		CallerKind:     CallerGuest,
+		CallerLabel:    "guest:abcdef",
+		Status:         StatusReleased,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Upsert(Session{
 		VoiceSessionID:         "vs_key_1",
 		Owner:                  "api_key:9",
 		CallerKind:             CallerAPIKey,
@@ -82,7 +91,7 @@ func TestCallSessionUpsertUpdateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Total != 2 || stats.Admin != 1 || stats.APIKey != 1 || stats.Released != 1 || stats.Active != 1 {
+	if stats.Total != 3 || stats.Admin != 1 || stats.APIKey != 1 || stats.Guest != 1 || stats.Released != 2 || stats.Active != 1 {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 
@@ -93,7 +102,6 @@ func TestCallSessionUpsertUpdateAndList(t *testing.T) {
 		t.Fatalf("expected deleted session missing, got %v", err)
 	}
 }
-
 
 func TestMarkAllActiveReleasedOnStartup(t *testing.T) {
 	s := newTestStore(t)

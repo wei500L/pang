@@ -16,6 +16,11 @@ func registerPublicStaticAssets(mux *http.ServeMux, staticDir string) {
 }
 
 func registerStaticRoutes(mux *http.ServeMux, staticDir string) {
+	registerPublicStaticRoutes(mux, staticDir)
+	registerAdminStaticRoutes(mux, staticDir)
+}
+
+func registerPublicStaticRoutes(mux *http.ServeMux, staticDir string) {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -26,6 +31,12 @@ func registerStaticRoutes(mux *http.ServeMux, staticDir string) {
 	mux.HandleFunc("GET /voice", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, joinStatic(staticDir, "voice.html"))
 	})
+	mux.HandleFunc("GET /voice.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/voice", http.StatusMovedPermanently)
+	})
+}
+
+func registerAdminStaticRoutes(mux *http.ServeMux, staticDir string) {
 	mux.HandleFunc("GET /accounts", func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, joinStatic(staticDir, "accounts.html"))
 	})
@@ -37,9 +48,6 @@ func registerStaticRoutes(mux *http.ServeMux, staticDir string) {
 	})
 	// Keep the former file-suffixed URLs as canonical redirects for bookmarks
 	// and external links created before clean routes were introduced.
-	mux.HandleFunc("GET /voice.html", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/voice", http.StatusMovedPermanently)
-	})
 	mux.HandleFunc("GET /accounts.html", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/accounts", http.StatusMovedPermanently)
 	})
@@ -71,7 +79,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "microphone=(self), camera=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; object-src 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://challenges.cloudflare.com; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; media-src 'self' blob:; object-src 'none'")
 		if r.TLS != nil {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}

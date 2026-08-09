@@ -1216,6 +1216,17 @@ func classifyCaller(owner string) (kind, label string, apiKeyID int64) {
 		id, _ := strconv.ParseInt(idText, 10, 64)
 		return callsessions.CallerAPIKey, "api_key:" + idText, id
 	}
+	if strings.HasPrefix(owner, "guest:") {
+		digest := strings.TrimSpace(strings.TrimPrefix(owner, "guest:"))
+		if len(digest) > 8 {
+			digest = digest[:8]
+		}
+		label := callsessions.CallerGuest
+		if digest != "" {
+			label += ":" + digest
+		}
+		return callsessions.CallerGuest, label, 0
+	}
 	// Built-in voice page / Basic Auth automation: admin:<username> or internal.
 	label = callsessions.CallerAdmin
 	if strings.HasPrefix(owner, "admin:") {

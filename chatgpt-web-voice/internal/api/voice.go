@@ -234,6 +234,9 @@ func (s *Server) release(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminVoiceOwner(r *http.Request) string {
+	if owner := strings.TrimSpace(auth.VoiceOwner(r.Context())); owner != "" {
+		return owner
+	}
 	return "admin:" + auth.Username(r.Context())
 }
 

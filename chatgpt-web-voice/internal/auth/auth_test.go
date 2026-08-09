@@ -2,7 +2,9 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +16,17 @@ import (
 
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/store"
 )
+
+type fakeTurnstileVerifier struct {
+	ok  bool
+	err error
+}
+
+func (f fakeTurnstileVerifier) SiteKey() string { return "test-site-key" }
+
+func (f fakeTurnstileVerifier) Verify(context.Context, string, string) (bool, error) {
+	return f.ok, f.err
+}
 
 func testManager() *Manager {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -35,7 +48,7 @@ func TestRequireRedirectsBrowserAndRejectsAPI(t *testing.T) {
 	browserReq.Header.Set("Accept", "text/html")
 	browserResp := httptest.NewRecorder()
 	protected.ServeHTTP(browserResp, browserReq)
-	if browserResp.Code != http.StatusSeeOther || browserResp.Header().Get("Location") != "/login" {
+	if browserResp.Code != http.StatusSeeOther || browserResp.Header().Get("Location") != "/login?next=%2Fvoice" {
 		t.Fatalf("unexpected browser response: %d %q", browserResp.Code, browserResp.Header().Get("Location"))
 	}
 
@@ -85,8 +98,8 @@ func TestLoginCreatesSessionCookie(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &loginBody); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
-	if loginBody.Redirect != "/voice" {
-		t.Fatalf("login redirect = %q, want /voice", loginBody.Redirect)
+	if loginBody.Redirect != "/accounts" {
+		t.Fatalf("login redirect = %q, want /accounts", loginBody.Redirect)
 	}
 
 	protected := manager.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +164,7 @@ func TestAuthenticatedLoginPageRedirectsToVoice(t *testing.T) {
 	manager.LoginPage(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})).ServeHTTP(resp, req)
-	if resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/voice" {
+	if resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/accounts" {
 		t.Fatalf("unexpected authenticated login redirect: %d %q", resp.Code, resp.Header().Get("Location"))
 	}
 }
@@ -195,7 +208,6 @@ func TestBasicAuthIsRejected(t *testing.T) {
 	}
 }
 
-
 func TestLoginRejectsInvalidCredentials(t *testing.T) {
 	manager := testManager()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"wrong"}`))
@@ -209,7 +221,6 @@ func TestLoginRejectsInvalidCredentials(t *testing.T) {
 		t.Fatal("invalid login must not set a session cookie")
 	}
 }
-
 
 func TestLoginLockoutAfterFailures(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -264,7 +275,6 @@ func TestLoginLockoutAfterFailures(t *testing.T) {
 		t.Fatalf("expected other IP to login, got %d %s", otherResp.Code, otherResp.Body.String())
 	}
 }
-
 
 func TestCSRFRequiredForCookieSessionWrites(t *testing.T) {
 	manager := testManager()
@@ -360,5 +370,108 @@ func TestDurableSessionSurvivesMemoryLoss(t *testing.T) {
 	protected.ServeHTTP(resp, req)
 	if resp.Code != http.StatusNoContent {
 		t.Fatalf("expected durable session auth, got %d", resp.Code)
+	}
+}
+
+func TestPublicPrincipalIssuesGuestIdentityAndRequiresCSRF(t *testing.T) {
+	manager := testManager()
+	var firstOwner string
+	public := manager.Public(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsGuest(r.Context()) {
+			t.Fatalf("expected guest principal: %+v", RequestPrincipal(r.Context()))
+		}
+		firstOwner = ConversationOwner(r.Context())
+		if firstOwner == "" || firstOwner != VoiceOwner(r.Context()) {
+			t.Fatalf("unexpected guest owners: %+v", RequestPrincipal(r.Context()))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	getReq := httptest.NewRequest(http.MethodGet, "/voice", nil)
+	getResp := httptest.NewRecorder()
+	public.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusNoContent {
+		t.Fatalf("public get status=%d", getResp.Code)
+	}
+	var guestCookie, csrfCookie *http.Cookie
+	for _, cookie := range getResp.Result().Cookies() {
+		switch cookie.Name {
+		case guestCookieName:
+			guestCookie = cookie
+		case csrfCookieName:
+			csrfCookie = cookie
+		}
+	}
+	if guestCookie == nil || csrfCookie == nil || !guestCookie.HttpOnly || guestCookie.MaxAge <= 0 {
+		t.Fatalf("public cookies incomplete: %+v", getResp.Result().Cookies())
+	}
+	if firstOwner == "guest:"+guestCookie.Value {
+		t.Fatal("guest owner must hash, not expose, the raw cookie token")
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/api/conversations", nil)
+	badReq.AddCookie(guestCookie)
+	badReq.AddCookie(csrfCookie)
+	badResp := httptest.NewRecorder()
+	public.ServeHTTP(badResp, badReq)
+	if badResp.Code != http.StatusForbidden {
+		t.Fatalf("missing csrf status=%d", badResp.Code)
+	}
+
+	okReq := httptest.NewRequest(http.MethodPost, "/api/conversations", nil)
+	okReq.AddCookie(guestCookie)
+	okReq.AddCookie(csrfCookie)
+	okReq.Header.Set(csrfHeaderName, csrfCookie.Value)
+	okResp := httptest.NewRecorder()
+	public.ServeHTTP(okResp, okReq)
+	if okResp.Code != http.StatusNoContent {
+		t.Fatalf("valid csrf status=%d body=%s", okResp.Code, okResp.Body.String())
+	}
+}
+
+func TestTurnstileProtectsAdministratorLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		verifier   fakeTurnstileVerifier
+		wantStatus int
+	}{
+		{name: "invalid", verifier: fakeTurnstileVerifier{}, wantStatus: http.StatusForbidden},
+		{name: "unavailable", verifier: fakeTurnstileVerifier{err: errors.New("offline")}, wantStatus: http.StatusServiceUnavailable},
+		{name: "valid", verifier: fakeTurnstileVerifier{ok: true}, wantStatus: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := testManager().WithTurnstile(tc.verifier)
+			body := bytes.NewBufferString(`{"username":"admin","password":"correct horse battery staple","turnstile_token":"token","next":"https://evil.example/steal"}`)
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/login", body)
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+			manager.HandleLogin(resp, req)
+			if resp.Code != tc.wantStatus {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK {
+				var result struct {
+					Redirect string `json:"redirect"`
+				}
+				if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if result.Redirect != "/keys" {
+					t.Fatalf("unsafe next redirect=%q", result.Redirect)
+				}
+			}
+		})
+	}
+}
+
+func TestLoginClientIPTrustsCloudflareOnlyWhenEnabled(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	req.RemoteAddr = "192.0.2.10:1234"
+	req.Header.Set("CF-Connecting-IP", "203.0.113.88")
+	if got := testManager().WithTrustedCloudflareIP(true).clientIP(req); got != "203.0.113.88" {
+		t.Fatalf("trusted client ip=%q", got)
+	}
+	if got := testManager().clientIP(req); got != "192.0.2.10" {
+		t.Fatalf("untrusted client ip=%q", got)
 	}
 }

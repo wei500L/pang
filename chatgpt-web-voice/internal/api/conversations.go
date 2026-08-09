@@ -18,7 +18,7 @@ type createConversationRequest struct {
 }
 
 type updateConversationRequest struct {
-	Title                   string  `json:"title"`
+	Title string `json:"title"`
 	// TitleLocked, when non-nil, updates whether hangup may overwrite the title.
 	// true = user renamed; hangup skips upstream title fetch.
 	TitleLocked             *bool   `json:"title_locked"`
@@ -36,7 +36,11 @@ type conversationMessageRequest struct {
 }
 
 func requestOwner(r *http.Request) string {
-	owner := auth.Username(r.Context())
+	owner := auth.ConversationOwner(r.Context())
+	if strings.TrimSpace(owner) != "" {
+		return owner
+	}
+	owner = auth.Username(r.Context())
 	if strings.TrimSpace(owner) == "" {
 		// Direct handler tests do not install the outer auth middleware. Runtime
 		// requests always carry the configured authenticated username.

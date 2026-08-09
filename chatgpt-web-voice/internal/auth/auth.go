@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,17 +22,33 @@ import (
 
 const sessionCookieName = "voice_gateway_session"
 const csrfCookieName = "voice_gateway_csrf"
+const guestCookieName = "voice_gateway_guest"
 const csrfHeaderName = "X-CSRF-Token"
+
+const guestCookieTTL = 365 * 24 * time.Hour
 
 // Default login brute-force controls. Override via NewWithLimits for tests/config.
 const (
-	DefaultLoginMaxFailures   = 8
-	DefaultLoginWindow        = 15 * time.Minute
-	DefaultLoginLockout       = 15 * time.Minute
-	DefaultLoginFailureDelay  = 200 * time.Millisecond
+	DefaultLoginMaxFailures  = 8
+	DefaultLoginWindow       = 15 * time.Minute
+	DefaultLoginLockout      = 15 * time.Minute
+	DefaultLoginFailureDelay = 200 * time.Millisecond
 )
 
 type userContextKey struct{}
+type principalContextKey struct{}
+
+const (
+	RoleGuest = "guest"
+	RoleAdmin = "admin"
+)
+
+type Principal struct {
+	Role              string
+	Username          string
+	ConversationOwner string
+	VoiceOwner        string
+}
 
 type session struct {
 	Username  string
@@ -38,10 +56,10 @@ type session struct {
 }
 
 type loginAttempt struct {
-	failures  int
-	firstAt   time.Time
+	failures    int
+	firstAt     time.Time
 	lockedUntil time.Time
-	lastAt    time.Time
+	lastAt      time.Time
 }
 
 // Limits controls login / Basic-Auth brute-force protection.
@@ -70,12 +88,14 @@ func (l Limits) normalized() Limits {
 
 // Manager validates configured credentials and owns browser login sessions.
 type Manager struct {
-	username   string
-	password   string
-	ttl        time.Duration
-	limits     Limits
-	logger     *slog.Logger
-	store      *SessionStore
+	username          string
+	password          string
+	ttl               time.Duration
+	limits            Limits
+	logger            *slog.Logger
+	store             *SessionStore
+	turnstile         TurnstileVerifier
+	trustCloudflareIP bool
 
 	mu       sync.Mutex
 	sessions map[string]session
@@ -111,10 +131,50 @@ func (m *Manager) WithSessionStore(store *SessionStore) *Manager {
 	return m
 }
 
+// WithTurnstile requires a successful Turnstile verification before password
+// validation. Tests and development callers may omit it explicitly.
+func (m *Manager) WithTurnstile(verifier TurnstileVerifier) *Manager {
+	if m != nil {
+		m.turnstile = verifier
+	}
+	return m
+}
+
+// WithTrustedCloudflareIP enables CF-Connecting-IP for login lockout and
+// Turnstile remote-IP verification. The origin must reject direct traffic.
+func (m *Manager) WithTrustedCloudflareIP(trust bool) *Manager {
+	if m != nil {
+		m.trustCloudflareIP = trust
+	}
+	return m
+}
+
 // Username returns the authenticated username stored in the request context.
 func Username(ctx context.Context) string {
 	username, _ := ctx.Value(userContextKey{}).(string)
 	return username
+}
+
+// RequestPrincipal returns the public/admin identity resolved by middleware.
+func RequestPrincipal(ctx context.Context) Principal {
+	principal, _ := ctx.Value(principalContextKey{}).(Principal)
+	return principal
+}
+
+func IsAdmin(ctx context.Context) bool {
+	return RequestPrincipal(ctx).Role == RoleAdmin
+}
+
+func IsGuest(ctx context.Context) bool {
+	return RequestPrincipal(ctx).Role == RoleGuest
+}
+
+func ConversationOwner(ctx context.Context) string {
+	return RequestPrincipal(ctx).ConversationOwner
+}
+
+func VoiceOwner(ctx context.Context) string {
+	return RequestPrincipal(ctx).VoiceOwner
 }
 
 // Require protects pages, static content, and APIs. Browser navigation is
@@ -132,7 +192,7 @@ func (m *Manager) Require(next http.Handler) http.Handler {
 			if method == "session" {
 				m.ensureCSRFCookie(w, r)
 			}
-			ctx := context.WithValue(r.Context(), userContextKey{}, username)
+			ctx := adminContext(r.Context(), username)
 			logging.FromContext(ctx).Debug("authentication_succeeded", "auth_method", method, "username", username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
@@ -140,7 +200,12 @@ func (m *Manager) Require(next http.Handler) http.Handler {
 
 		logging.FromContext(r.Context()).Warn("authentication_denied", "remote_addr", r.RemoteAddr)
 		if isBrowserNavigation(r) {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			nextPath := safeAdminNext(r.URL.RequestURI())
+			location := "/login"
+			if nextPath != "" {
+				location += "?next=" + url.QueryEscape(nextPath)
+			}
+			http.Redirect(w, r, location, http.StatusSeeOther)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -151,11 +216,40 @@ func (m *Manager) Require(next http.Handler) http.Handler {
 	})
 }
 
-// LoginPage redirects an already authenticated browser to the voice page.
+// Public allows the built-in voice workspace without login while assigning an
+// opaque per-browser owner. Authenticated administrators keep their existing
+// owner namespaces for backward compatibility.
+func (m *Manager) Public(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		guestToken := m.ensureGuestCookie(w, r)
+		m.ensureCSRFCookie(w, r)
+		if isUnsafeMethod(r.Method) && !m.validCSRF(r) {
+			logging.FromContext(r.Context()).Warn("csrf_rejected", "remote_addr", r.RemoteAddr, "path", r.URL.Path)
+			writeAuthError(w, http.StatusForbidden, "csrf token missing or invalid")
+			return
+		}
+
+		ctx := r.Context()
+		if username, method, ok := m.authenticate(r); ok {
+			ctx = adminContext(ctx, username)
+			logging.FromContext(ctx).Debug("authentication_succeeded", "auth_method", method, "username", username)
+		} else {
+			ctx = guestContext(ctx, guestToken)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// LoginPage redirects an already authenticated browser to the requested safe
+// administrator page, defaulting to the API-key dashboard.
 func (m *Manager) LoginPage(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := m.authenticate(r); ok {
-			http.Redirect(w, r, "/voice", http.StatusSeeOther)
+			destination := safeAdminNext(r.URL.Query().Get("next"))
+			if destination == "" {
+				destination = "/keys"
+			}
+			http.Redirect(w, r, destination, http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -167,7 +261,7 @@ func (m *Manager) LoginPage(next http.Handler) http.Handler {
 // retains the cookie after it closes. Credentials are never written to logs.
 func (m *Manager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	ip := clientIP(r)
+	ip := m.clientIP(r)
 	if retry, locked := m.lockoutRemaining(ip); locked {
 		logging.FromContext(r.Context()).Warn("login_locked", "remote_addr", r.RemoteAddr, "retry_after_sec", int(retry.Seconds()))
 		w.Header().Set("Retry-After", formatRetryAfter(retry))
@@ -176,9 +270,11 @@ func (m *Manager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Remember bool   `json:"remember"`
+		Username       string `json:"username"`
+		Password       string `json:"password"`
+		Remember       bool   `json:"remember"`
+		TurnstileToken string `json:"turnstile_token"`
+		Next           string `json:"next"`
 	}
 
 	contentType := strings.ToLower(r.Header.Get("Content-Type"))
@@ -195,6 +291,22 @@ func (m *Manager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		input.Username = r.FormValue("username")
 		input.Password = r.FormValue("password")
 		input.Remember = formBool(r.FormValue("remember"))
+		input.TurnstileToken = r.FormValue("turnstile_token")
+		input.Next = r.FormValue("next")
+	}
+
+	if m.turnstile != nil {
+		verified, err := m.turnstile.Verify(r.Context(), strings.TrimSpace(input.TurnstileToken), ip)
+		if err != nil {
+			logging.FromContext(r.Context()).Error("turnstile_verification_failed", "remote_addr", r.RemoteAddr, "error", err)
+			writeAuthError(w, http.StatusServiceUnavailable, "captcha verification unavailable")
+			return
+		}
+		if !verified {
+			logging.FromContext(r.Context()).Warn("turnstile_rejected", "remote_addr", r.RemoteAddr)
+			writeAuthError(w, http.StatusForbidden, "captcha verification failed")
+			return
+		}
 	}
 
 	if !m.validCredentials(input.Username, input.Password) {
@@ -259,7 +371,7 @@ func (m *Manager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":       true,
 		"username": m.username,
-		"redirect": "/voice",
+		"redirect": loginRedirect(input.Next),
 	})
 }
 
@@ -296,14 +408,31 @@ func (m *Manager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-// HandleSession returns the authenticated browser identity without exposing
-// configured credentials.
+// HandleSession returns either the authenticated administrator or the public
+// guest role without exposing configured credentials.
 func (m *Manager) HandleSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if IsAdmin(r.Context()) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authenticated": true,
+			"role":          RoleAdmin,
+			"username":      Username(r.Context()),
+		})
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"authenticated": true,
-		"username":      Username(r.Context()),
+		"authenticated": false,
+		"role":          RoleGuest,
 	})
+}
+
+func (m *Manager) HandleAuthConfig(w http.ResponseWriter, _ *http.Request) {
+	siteKey := ""
+	if m.turnstile != nil {
+		siteKey = m.turnstile.SiteKey()
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"turnstile_site_key": siteKey})
 }
 
 func (m *Manager) authenticate(r *http.Request) (username, method string, ok bool) {
@@ -436,6 +565,74 @@ func newSessionToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+func adminContext(ctx context.Context, username string) context.Context {
+	username = strings.TrimSpace(username)
+	ctx = context.WithValue(ctx, userContextKey{}, username)
+	return context.WithValue(ctx, principalContextKey{}, Principal{
+		Role:              RoleAdmin,
+		Username:          username,
+		ConversationOwner: username,
+		VoiceOwner:        "admin:" + username,
+	})
+}
+
+func guestContext(ctx context.Context, token string) context.Context {
+	sum := sha256.Sum256([]byte(token))
+	owner := "guest:" + hex.EncodeToString(sum[:])
+	return context.WithValue(ctx, principalContextKey{}, Principal{
+		Role:              RoleGuest,
+		ConversationOwner: owner,
+		VoiceOwner:        owner,
+	})
+}
+
+func (m *Manager) ensureGuestCookie(w http.ResponseWriter, r *http.Request) string {
+	if cookie, err := r.Cookie(guestCookieName); err == nil && validGuestToken(cookie.Value) {
+		return cookie.Value
+	}
+	token, err := newSessionToken()
+	if err != nil {
+		m.logger.Error("guest_token_generation_failed", "error", err)
+		return "unavailable"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     guestCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(guestCookieTTL),
+		MaxAge:   int(guestCookieTTL.Seconds()),
+	})
+	return token
+}
+
+func validGuestToken(value string) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	return err == nil && len(raw) == 32
+}
+
+func safeAdminNext(value string) string {
+	value = strings.TrimSpace(value)
+	if parsed, err := url.Parse(value); err == nil && parsed.RawQuery == "" && parsed.Fragment == "" {
+		value = parsed.Path
+	}
+	switch value {
+	case "/accounts", "/keys", "/sessions", "/voice":
+		return value
+	default:
+		return ""
+	}
+}
+
+func loginRedirect(next string) string {
+	if destination := safeAdminNext(next); destination != "" {
+		return destination
+	}
+	return "/keys"
+}
+
 func isBrowserNavigation(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -450,7 +647,12 @@ func requestIsHTTPS(r *http.Request) bool {
 	return r != nil && r.TLS != nil
 }
 
-func clientIP(r *http.Request) string {
+func (m *Manager) clientIP(r *http.Request) string {
+	if m != nil && m.trustCloudflareIP {
+		if value := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); net.ParseIP(value) != nil {
+			return value
+		}
+	}
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil && host != "" {
 		return host
@@ -460,7 +662,6 @@ func clientIP(r *http.Request) string {
 	}
 	return "unknown"
 }
-
 
 func formatRetryAfter(d time.Duration) string {
 	sec := int(d.Round(time.Second) / time.Second)
@@ -486,7 +687,6 @@ func logUsername(username string) string {
 	}
 	return username
 }
-
 
 func isUnsafeMethod(method string) bool {
 	switch strings.ToUpper(strings.TrimSpace(method)) {

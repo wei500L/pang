@@ -79,6 +79,9 @@ func (s *Server) listCallSessions(w http.ResponseWriter, r *http.Request) {
 		if item.CallerKind == callsessions.CallerAdmin {
 			row["caller_label"] = "admin"
 		}
+		if item.CallerKind == callsessions.CallerGuest && strings.TrimSpace(item.CallerLabel) == "" {
+			row["caller_label"] = "guest"
+		}
 		if item.AccountID > 0 && s.accounts != nil {
 			if account, err := s.accounts.Get(item.AccountID); err == nil {
 				row["account_email"] = account.Email

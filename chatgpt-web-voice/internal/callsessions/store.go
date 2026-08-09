@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	// CallerAdmin is the built-in voice page / administrator automation path.
+	// CallerAdmin is the authenticated administrator voice-page path.
 	CallerAdmin = "admin"
 	// CallerAPIKey is a downstream Bearer API key path.
 	CallerAPIKey = "api_key"
+	// CallerGuest is the anonymous built-in voice page.
+	CallerGuest = "guest"
 
 	StatusActive   = "active"
 	StatusReleased = "released"
@@ -63,6 +65,7 @@ type Stats struct {
 	Released int `json:"released"`
 	Admin    int `json:"admin"`
 	APIKey   int `json:"api_key"`
+	Guest    int `json:"guest"`
 }
 
 // Error is a validation error safe for API callers.
@@ -358,6 +361,9 @@ func (s *Store) Stats() (Stats, error) {
 	if err := s.db.Conn().QueryRow(`SELECT COUNT(*) FROM call_sessions WHERE caller_kind = ?`, CallerAPIKey).Scan(&stats.APIKey); err != nil {
 		return Stats{}, fmt.Errorf("count api_key call sessions: %w", err)
 	}
+	if err := s.db.Conn().QueryRow(`SELECT COUNT(*) FROM call_sessions WHERE caller_kind = ?`, CallerGuest).Scan(&stats.Guest); err != nil {
+		return Stats{}, fmt.Errorf("count guest call sessions: %w", err)
+	}
 	return stats, nil
 }
 
@@ -430,6 +436,8 @@ func normalizeSession(item Session) Session {
 	if item.CallerKind == "" {
 		if strings.HasPrefix(item.Owner, "api_key:") {
 			item.CallerKind = CallerAPIKey
+		} else if strings.HasPrefix(item.Owner, "guest:") {
+			item.CallerKind = CallerGuest
 		} else {
 			item.CallerKind = CallerAdmin
 		}
@@ -437,6 +445,8 @@ func normalizeSession(item Session) Session {
 	if item.CallerLabel == "" {
 		if item.CallerKind == CallerAdmin {
 			item.CallerLabel = CallerAdmin
+		} else if item.CallerKind == CallerGuest {
+			item.CallerLabel = CallerGuest
 		} else if item.APIKeyID > 0 {
 			item.CallerLabel = fmt.Sprintf("api_key:%d", item.APIKeyID)
 		}

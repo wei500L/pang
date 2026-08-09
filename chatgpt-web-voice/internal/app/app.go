@@ -97,7 +97,9 @@ func Run() error {
 			FailureDelay: 200 * time.Millisecond,
 		},
 		logger,
-	).WithSessionStore(auth.NewSessionStore(db))
+	).WithSessionStore(auth.NewSessionStore(db)).WithTurnstile(
+		auth.NewCloudflareTurnstile(cfg.TurnstileSiteKey, cfg.TurnstileSecretKey, nil),
+	).WithTrustedCloudflareIP(cfg.TrustCloudflareIP)
 	apiKeyManager := auth.NewAPIKeyManager(apiKeyStore, logger)
 	voiceService := voice.New(cfg, accountPool, logger).WithCallSessions(callSessionStore)
 	apiServer := api.New(api.Dependencies{
@@ -156,11 +158,15 @@ func Run() error {
 }
 
 func newHandler(cfg config.Config, authManager *auth.Manager, apiKeyManager *auth.APIKeyManager, apiServer *api.Server, logger *slog.Logger) http.Handler {
-	protected := http.NewServeMux()
-	apiServer.Register(protected)
-	registerStaticRoutes(protected, cfg.StaticDir)
+	public := http.NewServeMux()
+	apiServer.RegisterPublic(public)
+	registerPublicStaticRoutes(public, cfg.StaticDir)
+	admin := http.NewServeMux()
+	apiServer.RegisterAdmin(admin)
+	registerAdminStaticRoutes(admin, cfg.StaticDir)
 	downstream := http.NewServeMux()
 	apiServer.RegisterDownstream(downstream)
+	publicLimiter := newPublicRateLimiter(cfg)
 
 	root := http.NewServeMux()
 	// Shared CSS/assets must be public: login.html loads /static/app.css before auth.
@@ -168,11 +174,22 @@ func newHandler(cfg config.Config, authManager *auth.Manager, apiKeyManager *aut
 	root.Handle("GET /login", authManager.LoginPage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serveFile(w, r, joinStatic(cfg.StaticDir, "login.html"))
 	})))
+	root.HandleFunc("GET /api/auth/config", authManager.HandleAuthConfig)
 	root.HandleFunc("POST /api/auth/login", authManager.HandleLogin)
 	root.Handle("POST /api/auth/logout", authManager.Require(http.HandlerFunc(authManager.HandleLogout)))
-	root.Handle("GET /api/auth/session", authManager.Require(http.HandlerFunc(authManager.HandleSession)))
+	root.Handle("GET /api/auth/session", authManager.Public(http.HandlerFunc(authManager.HandleSession)))
 	root.Handle("/v1/", apiKeyManager.Require(downstream))
-	root.Handle("/", authManager.Require(protected))
+	for _, path := range []string{
+		"GET /accounts", "GET /accounts.html",
+		"GET /keys", "GET /keys.html",
+		"GET /sessions", "GET /sessions.html",
+		"/api/accounts", "/api/accounts/",
+		"/api/keys", "/api/keys/",
+		"/api/call-sessions", "/api/call-sessions/",
+	} {
+		root.Handle(path, authManager.Require(admin))
+	}
+	root.Handle("/", authManager.Public(publicLimiter.Wrap(public)))
 
 	return logging.HTTPMiddleware(logger, securityHeaders(root))
 }

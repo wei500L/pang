@@ -14,6 +14,9 @@ const (
 	EnvironmentDevelopment = "development"
 	EnvironmentProduction  = "production"
 
+	DevelopmentTurnstileSiteKey   = "1x00000000000000000000AA"
+	DevelopmentTurnstileSecretKey = "1x0000000000000000000000000000000AA"
+
 	// Upstream transport modes.
 	// Docker image defaults to curl-impersonate; local go run defaults to tls-client.
 	TransportTLSClient       = "tls-client"
@@ -57,6 +60,11 @@ type Config struct {
 	LoginMaxFailures    int
 	LoginLockoutSeconds int
 	LoginWindowSeconds  int
+	TurnstileSiteKey    string
+	TurnstileSecretKey  string
+	TrustCloudflareIP   bool
+	PublicSessionRate   int
+	PublicWriteRate     int
 	TokenEncryptionKey  string
 	// UpstreamTransport selects the HTTP stack for chatgpt.com:
 	// "tls-client" (local default), "curl-impersonate" (Docker default), or "go".
@@ -148,6 +156,16 @@ func Load() Config {
 	}
 
 	environment := strings.ToLower(env("VOICE_ENV", EnvironmentDevelopment))
+	turnstileSiteKey := env("VOICE_TURNSTILE_SITE_KEY", "")
+	turnstileSecretKey := envRaw("VOICE_TURNSTILE_SECRET_KEY", "")
+	if environment != EnvironmentProduction {
+		if strings.TrimSpace(turnstileSiteKey) == "" {
+			turnstileSiteKey = DevelopmentTurnstileSiteKey
+		}
+		if strings.TrimSpace(turnstileSecretKey) == "" {
+			turnstileSecretKey = DevelopmentTurnstileSecretKey
+		}
+	}
 	dataDir := env("VOICE_DATA_DIR", filepath.Join(baseDir, "data"))
 	staticDir := env("VOICE_STATIC_DIR", filepath.Join(baseDir, "static"))
 	databaseFile := env("VOICE_DATABASE_FILE", filepath.Join(dataDir, "voice.db"))
@@ -183,6 +201,11 @@ func Load() Config {
 		LoginMaxFailures:       envInt("VOICE_LOGIN_MAX_FAILURES", 8),
 		LoginWindowSeconds:     envInt("VOICE_LOGIN_WINDOW_SECONDS", 15*60),
 		LoginLockoutSeconds:    envInt("VOICE_LOGIN_LOCKOUT_SECONDS", 15*60),
+		TurnstileSiteKey:       turnstileSiteKey,
+		TurnstileSecretKey:     turnstileSecretKey,
+		TrustCloudflareIP:      envBool("VOICE_TRUST_CLOUDFLARE_IP", false),
+		PublicSessionRate:      envInt("VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE", 10),
+		PublicWriteRate:        envInt("VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE", 60),
 		TokenEncryptionKey:     envRaw("VOICE_TOKEN_ENCRYPTION_KEY", ""),
 		UpstreamTransport:      transport,
 		TLSProfile:             env("VOICE_TLS_PROFILE", DefaultTLSProfile),
@@ -243,6 +266,20 @@ func (c Config) Validate() error {
 	}
 	if c.LoginLockoutSeconds < 1 {
 		return fmt.Errorf("VOICE_LOGIN_LOCKOUT_SECONDS must be greater than zero")
+	}
+	if c.PublicSessionRate < 0 {
+		return fmt.Errorf("VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE must not be negative")
+	}
+	if c.PublicWriteRate < 0 {
+		return fmt.Errorf("VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE must not be negative")
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Environment), EnvironmentProduction) {
+		if strings.TrimSpace(c.TurnstileSiteKey) == "" {
+			return fmt.Errorf("VOICE_TURNSTILE_SITE_KEY is required in production")
+		}
+		if strings.TrimSpace(c.TurnstileSecretKey) == "" {
+			return fmt.Errorf("VOICE_TURNSTILE_SECRET_KEY is required in production")
+		}
 	}
 	if strings.TrimSpace(c.DatabaseFile) == "" {
 		return fmt.Errorf("VOICE_DATABASE_FILE is required")

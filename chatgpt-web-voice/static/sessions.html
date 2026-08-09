@@ -70,7 +70,7 @@
       <span class="note-mark">META</span>
       <div>
         <strong>调用方标识</strong>
-        内置语音页 / 管理端记为 <code>admin</code>；下游 Bearer key 记为密钥名称。账号列显示池内粘性账号邮箱。
+        游客语音页记为 <code>guest</code>，管理员记为 <code>admin</code>，下游 Bearer key 记为密钥名称。账号列显示池内粘性账号邮箱。
       </div>
     </div>
 
@@ -79,6 +79,7 @@
       <span class="stat-pill"><strong id="activeCount">0</strong><span>活跃</span></span>
       <span class="stat-pill"><strong id="releasedCount">0</strong><span>已释放</span></span>
       <span class="stat-pill"><strong id="adminCount">0</strong><span>admin</span></span>
+      <span class="stat-pill"><strong id="guestCount">0</strong><span>游客</span></span>
       <span class="stat-pill"><strong id="apiKeyCount">0</strong><span>下游 key</span></span>
     </div>
 
@@ -91,6 +92,7 @@
           <select id="callerFilter" aria-label="调用方">
             <option value="all">全部来源</option>
             <option value="admin">admin</option>
+            <option value="guest">游客</option>
             <option value="api_key">下游 key</option>
           </select>
           <select id="statusFilter" aria-label="状态">
@@ -129,7 +131,7 @@
   <script>
     (function () {
       var sessions = [];
-      var stats = { total: 0, active: 0, released: 0, admin: 0, api_key: 0 };
+      var stats = { total: 0, active: 0, released: 0, admin: 0, guest: 0, api_key: 0 };
       var rows = document.getElementById('sessionRows');
       var tableWrap = document.getElementById('tableWrap');
       var emptyState = document.getElementById('emptyState');
@@ -209,10 +211,12 @@
       }
 
       function renderRow(item) {
-        var callerKind = item.caller_kind === 'api_key' ? 'api_key' : 'admin';
+        var callerKind = ['admin', 'guest', 'api_key'].indexOf(item.caller_kind) >= 0 ? item.caller_kind : 'admin';
         var callerText = callerKind === 'admin'
           ? 'admin'
-          : (item.caller_label || item.api_key_name || ('key#' + (item.api_key_id || '—')));
+          : (callerKind === 'guest'
+            ? (item.caller_label || 'guest')
+            : (item.caller_label || item.api_key_name || ('key#' + (item.api_key_id || '—'))));
         var statusClass = item.status === 'released' ? 'released' : '';
         var statusText = item.status === 'released' ? '已释放' : '活跃';
         var voice = item.voice || '—';
@@ -259,6 +263,7 @@
         document.getElementById('activeCount').textContent = stats.active || 0;
         document.getElementById('releasedCount').textContent = stats.released || 0;
         document.getElementById('adminCount').textContent = stats.admin || 0;
+        document.getElementById('guestCount').textContent = stats.guest || 0;
         document.getElementById('apiKeyCount').textContent = stats.api_key || 0;
         rows.innerHTML = sessions.map(renderRow).join('');
         tableWrap.style.display = sessions.length ? 'block' : 'none';

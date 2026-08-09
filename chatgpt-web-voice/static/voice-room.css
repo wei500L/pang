@@ -213,17 +213,15 @@ body.app-shell a:focus-visible {
   width: 100%;
   height: auto;
   display: block;
-  mix-blend-mode: multiply;
 }
 
 .pangdonglai-signature {
-  min-height: 42px;
+  min-height: 46px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   box-sizing: border-box;
   margin-left: 8px;
-  padding: 4px 14px 4px 8px;
+  padding: 2px 12px;
   border: 1px solid rgba(104, 86, 69, 0.22);
   border-radius: 999px;
   color: #5c5751;
@@ -233,19 +231,11 @@ body.app-shell a:focus-visible {
   transition: transform 180ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
-.pangdonglai-monogram {
-  width: 48px;
+.pangdonglai-brandmark {
+  width: 118px;
   height: auto;
   display: block;
   flex: 0 0 auto;
-}
-
-.pangdonglai-signature span {
-  font-family: "Noto Sans SC", "PingFang SC", sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
 }
 
 .pangdonglai-signature:hover {
@@ -1241,8 +1231,8 @@ body.app-shell .session-context-menu button:hover { background: rgba(243, 111, 1
     padding: 0 30px 0 42px;
   }
   .brand-navigation { gap: 32px; }
-  .pangdonglai-signature { min-height: 40px; padding-right: 12px; }
-  .pangdonglai-monogram { width: 44px; }
+  .pangdonglai-signature { min-height: 43px; padding-inline: 10px; }
+  .pangdonglai-brandmark { width: 110px; }
   body.app-shell .workspace { grid-template-columns: 96px minmax(0, 1fr); }
   body.app-shell .welcome-copy { left: 54px; width: min(360px, 34vw); }
   body.app-shell .welcome-capabilities span { min-width: 112px; padding-inline: 12px; }
@@ -1268,9 +1258,8 @@ body.app-shell .session-context-menu button:hover { background: rgba(243, 111, 1
   .brand-menu-button { display: inline-grid !important; }
   .freedom-wordmark { width: 132px; }
   .brand-navigation { display: none; }
-  .pangdonglai-signature { min-height: 38px; padding: 3px 10px 3px 6px; }
-  .pangdonglai-monogram { width: 40px; }
-  .pangdonglai-signature span { font-size: 11px; }
+  .pangdonglai-signature { min-height: 40px; padding: 2px 9px; }
+  .pangdonglai-brandmark { width: 102px; }
   body.app-shell .brand-header .header-chip { display: none; }
 
   body.app-shell .workspace {

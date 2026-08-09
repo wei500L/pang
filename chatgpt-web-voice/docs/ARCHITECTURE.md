@@ -105,19 +105,20 @@
 
 ```text
 root mux
-├── GET  /login                         公开（已登录 → /voice）
+├── GET  /login                         公开（已登录 → next 或 /keys）
+├── GET  /api/auth/config               公开（Turnstile site key）
 ├── POST /api/auth/login                公开
 ├── POST /api/auth/logout               Require(session)
-├── GET  /api/auth/session              Require(session)
+├── GET  /api/auth/session              PublicPrincipal（guest/admin）
 ├── GET  /static/*                      公开静态资源（登录页 CSS 等）
 ├── /v1/*                               APIKeyManager.Require → downstream
-└── /*                                  auth.Manager.Require → protected
-      ├── /api/voice/*
-      ├── /api/accounts/*
-      ├── /api/keys/*
-      ├── /api/call-sessions/*
-      ├── /api/conversations/*
-      └── 页面 /voice /accounts /keys /sessions
+├── PublicPrincipal + guest rate limit
+│     ├── 页面 /voice
+│     ├── /api/voice/*
+│     └── /api/conversations/*
+└── Require(admin session)
+      ├── 页面 /accounts /keys /sessions
+      └── /api/accounts/* /api/keys/* /api/call-sessions/*
 ```
 
 最外层：
@@ -130,12 +131,14 @@ root mux
 | 方式 | 用途 |
 |---|---|
 | HttpOnly cookie `voice_gateway_session` | 浏览器登录 |
+| HttpOnly cookie `voice_gateway_guest` | 匿名游客 owner（服务端只使用其 SHA-256） |
 | CSRF cookie `voice_gateway_csrf` + 头 `X-CSRF-Token` | 对 cookie 会话的非安全方法校验 |
 
 **管理面不支持 HTTP Basic**（脚本请用登录 cookie 或下游 `/v1` API Key）。
 
 - 密码：SHA-256 + `subtle.ConstantTimeCompare`；
 - 登录失败：窗口计数 + 锁定（`VOICE_LOGIN_*`）；
+- 登录前必须通过 Cloudflare Turnstile，验证失败或服务不可用时不检查密码；
 - 会话可落 **auth_sessions**（token hash），进程重启后仍可续 cookie（在 TTL 内）；
 - 「记住登录」控制 cookie 是否持久；未勾选则为浏览器会话 cookie。
 
@@ -143,6 +146,7 @@ Owner 命名空间：
 
 ```text
 admin:<username>
+guest:<sha256-cookie-token>
 ```
 
 ### 4.2 下游 API Key 鉴权
@@ -428,11 +432,11 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 
 | 页面 | 作用 |
 |---|---|
-| `/login` | 登录拿 session cookie |
-| `/voice` | 通话、字幕、会话历史、设置、标题策略 |
-| `/accounts` | 账号池 CRUD、探活、JWT exp 展示 |
-| `/keys` | 下游 Key（一次性 secret） |
-| `/sessions` | `call_sessions` 元数据 |
+| `/login` | 管理员账号密码 + Turnstile 登录 |
+| `/voice` | 公开通话、字幕、匿名隔离会话历史、设置、标题策略 |
+| `/accounts` | 管理员：账号池 CRUD、探活、JWT exp 展示 |
+| `/keys` | 管理员：下游 Key（一次性 secret） |
+| `/sessions` | 管理员：`call_sessions` 元数据（guest/admin/api_key） |
 
 ### 7.1 `voice.html` 主路径
 
@@ -522,7 +526,7 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 1. 浏览器 **永不持有** ChatGPT `access_token`；
 2. 落盘 token 必须 `VOICE_TOKEN_ENCRYPTION_KEY`；丢 key ≈ 丢池；
 3. 下游 Key 只存 hash；
-4. owner 隔离 admin 与各 API Key 的 voice session / 对话；
+4. owner 隔离 guest、admin 与各 API Key 的 voice session / 对话；
 5. 列表 API 脱敏；
 6. 生产：网关内网 HTTP + 反代 HTTPS，管理面勿裸奔；
 7. 图片：token 与 complete 留在 Gateway，字节不落盘。
