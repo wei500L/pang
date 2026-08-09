@@ -4,25 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>语音通话</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2310a37f'/%3E%3Cpath d='M16 34h8l4-14 8 27 5-18h7' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/png" href="/static/assets/voice-room/pangdonglai-badge-transparent.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300,0,0" rel="stylesheet" />
   <script>
     (function () {
       try {
-        var key = 'chatgpt_web_voice_theme_v1';
-        var theme = localStorage.getItem(key);
-        if (theme !== 'light' && theme !== 'dark') {
-          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-theme', 'light');
       } catch (e) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>
   <script type="module" src="/static/agent-visual/index.js"></script>
+  <script type="module" src="/static/voice-room.js"></script>
   <style>
     /* Conversation workspace: voice console with light / dark themes. */
     :root,
@@ -837,10 +834,7 @@
       -webkit-mask-repeat: no-repeat;
       -webkit-mask-size: 14px 14px;
     }
-    body.app-shell #btnMute::before {
-      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 14a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 1 0-5 0v5A2.5 2.5 0 0 0 12 14Zm5-2.5a1 1 0 1 0-2 0 3 3 0 1 1-6 0 1 1 0 1 0-2 0 5 5 0 0 0 4 4.9V19H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.6a5 5 0 0 0 4-4.9Z'/%3E%3C/svg%3E");
-      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 14a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 1 0-5 0v5A2.5 2.5 0 0 0 12 14Zm5-2.5a1 1 0 1 0-2 0 3 3 0 1 1-6 0 1 1 0 1 0-2 0 5 5 0 0 0 4 4.9V19H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.6a5 5 0 0 0 4-4.9Z'/%3E%3C/svg%3E");
-    }
+    body.app-shell #btnMute::before {}
     body.app-shell #btnMute.is-live:not(:disabled) {
       color: var(--app-green);
       border-color: rgba(16, 163, 127, .28);
@@ -860,10 +854,7 @@
       background: currentColor;
       transform: rotate(-42deg);
     }
-    body.app-shell #btnSpeaker::before {
-      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M14 5.2a.8.8 0 0 0-1.28-.64L8.9 7.5H6a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 6 16.5h2.9l3.82 2.94A.8.8 0 0 0 14 18.8V5.2Zm4.2 3.1a.75.75 0 1 0-1.2.9 2.2 2.2 0 0 1 0 2.6.75.75 0 1 0 1.2.9 3.7 3.7 0 0 0 0-4.4Zm2.4-1.8a.75.75 0 1 0-1.2.9 5.2 5.2 0 0 1 0 7.2.75.75 0 1 0 1.2.9 6.7 6.7 0 0 0 0-9Z'/%3E%3C/svg%3E");
-      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M14 5.2a.8.8 0 0 0-1.28-.64L8.9 7.5H6a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 6 16.5h2.9l3.82 2.94A.8.8 0 0 0 14 18.8V5.2Zm4.2 3.1a.75.75 0 1 0-1.2.9 2.2 2.2 0 0 1 0 2.6.75.75 0 1 0 1.2.9 3.7 3.7 0 0 0 0-4.4Zm2.4-1.8a.75.75 0 1 0-1.2.9 5.2 5.2 0 0 1 0 7.2.75.75 0 1 0 1.2.9 6.7 6.7 0 0 0 0-9Z'/%3E%3C/svg%3E");
-    }
+    body.app-shell #btnSpeaker::before {}
     body.app-shell #btnSpeaker.is-live:not(:disabled) {
       color: var(--app-green);
       border-color: rgba(16, 163, 127, .28);
@@ -1751,29 +1742,61 @@
       body.app-shell .composer-dock { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
     }
   </style>
+  <link rel="stylesheet" href="/static/voice-room.css" />
 </head>
 <body class="app-shell" data-voice-state="idle">
+  <div class="room-atmosphere" aria-hidden="true">
+    <div class="room-background"></div>
+    <div class="room-sunwash"></div>
+    <div class="room-window-light"></div>
+    <div class="room-leaf-shadow"></div>
+    <div class="room-air"></div>
+    <div class="room-foreground"></div>
+  </div>
+
+  <header class="brand-header">
+    <div class="brand-header-start">
+      <button type="button" id="btnOpenSessions" class="icon-button brand-menu-button" data-i18n-title="openSessions" data-i18n-aria="openSessions" title="打开会话栏" aria-label="打开会话栏">
+        <span class="material-symbols-rounded" aria-hidden="true">history</span>
+      </button>
+      <a class="freedom-wordmark" href="/voice" aria-label="自由·爱">
+        <img src="/static/assets/voice-room/freedom-love-wordmark-transparent.png" alt="自由·爱，从心出发，向善而行" />
+      </a>
+    </div>
+    <nav class="brand-navigation" aria-label="品牌导航">
+      <a href="/voice" data-room-nav="home">首页</a>
+      <a href="/voice#culture" data-room-nav="culture">文化</a>
+      <a href="/voice#experience" data-room-nav="experience">体验</a>
+      <a href="/voice" class="active" aria-current="page">对话</a>
+      <a href="/voice#about" data-room-nav="about">关于</a>
+    </nav>
+    <div class="brand-header-actions">
+      <span id="sessionTitle" class="visually-hidden" data-i18n="sessionNew">新会话</span>
+      <button type="button" id="btnUiLocale" class="header-chip" data-i18n-title="interfaceLanguage" data-i18n-aria="interfaceLanguage" title="界面语言" aria-label="界面语言">中文</button>
+      <button type="button" id="btnUiTheme" class="header-chip theme-toggle" data-i18n-title="interfaceTheme" data-i18n-aria="interfaceTheme" title="界面主题" aria-label="界面主题">浅色</button>
+      <button type="button" id="btnSettings" class="icon-button brand-settings-button" data-i18n-title="openSettings" data-i18n-aria="openSettings" title="打开设置" aria-label="打开设置">
+        <span class="material-symbols-rounded" aria-hidden="true">tune</span>
+      </button>
+      <img class="pangdonglai-badge" src="/static/assets/voice-room/pangdonglai-badge-transparent.png" alt="DL 胖东来" />
+    </div>
+    <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
+  </header>
+
   <div class="workspace">
     <aside id="sessionSidebar" class="session-sidebar" data-i18n-aria="sessions" aria-label="会话">
       <div class="sidebar-top">
-        <a class="brand" href="/voice">
-          <span class="brand-mark">V</span>
-          <span class="brand-text">
-            <span class="brand-title" data-i18n="brandTitle">语音通话</span>
-            <span class="brand-sub" data-i18n="brandSub">实时陪伴式对话</span>
-          </span>
-        </a>
-        <button type="button" id="btnCloseSessions" class="icon-button mobile-only" data-i18n-title="closeSessions" data-i18n-aria="closeSessions" title="关闭会话栏" aria-label="关闭会话栏">×</button>
+        <span class="material-symbols-rounded sidebar-clock" aria-hidden="true">schedule</span>
+        <span class="sidebar-title" data-i18n="sessions">最近</span>
+        <button type="button" id="btnCloseSessions" class="icon-button mobile-only" data-i18n-title="closeSessions" data-i18n-aria="closeSessions" title="关闭会话栏" aria-label="关闭会话栏"><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
       </div>
       <button type="button" id="btnNewSession" class="new-session">
-        <span class="new-session-icon">+</span>
+        <span class="material-symbols-rounded new-session-icon" aria-hidden="true">add</span>
         <span data-i18n="newSession">新会话</span>
       </button>
-      <div class="sidebar-label" data-i18n="sessions">会话</div>
       <nav id="sessionList" class="session-list" data-i18n-aria="sessions" aria-label="会话"></nav>
       <div class="sidebar-footer">
-        <div class="privacy-status"><span aria-hidden="true"></span><span data-i18n="privacyStatus">端到端实时传输</span></div>
-        <p class="footer-note" data-i18n="privacyNote">音频直连上游，不经过网关存储。</p>
+        <div class="privacy-status"><span class="material-symbols-rounded" aria-hidden="true">psychiatry</span><span data-i18n="privacyStatus">安心对话</span></div>
+        <p class="footer-note" data-i18n="privacyNote">音频实时传输，不保留原始录音。</p>
       </div>
     </aside>
 
@@ -1785,48 +1808,24 @@
     </div>
 
     <main class="conversation-shell">
-      <header class="conversation-header">
-        <div class="header-left">
-          <button type="button" id="btnOpenSessions" class="icon-button" data-i18n-title="openSessions" data-i18n-aria="openSessions" title="打开会话栏" aria-label="打开会话栏">☰</button>
-          <div>
-            <div class="header-eyebrow"><span data-i18n="roomLabel">VOICE ROOM</span><span aria-hidden="true">/</span><span data-i18n="roomPrivacy">PRIVATE</span></div>
-            <div id="sessionTitle" class="session-title" data-i18n="sessionNew">新会话</div>
-            <div class="session-status">
-              <span id="orb" class="orb idle" aria-hidden="true"></span>
-              <span id="statusText" data-i18n="statusReady">准备就绪</span>
-              <span class="status-divider" aria-hidden="true">·</span>
-              <span id="subText" data-i18n="subReady">点击下方按钮开始</span>
-            </div>
-          </div>
-        </div>
-        <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
-        <div class="header-actions">
-          <button type="button" id="btnUiLocale" class="header-chip" data-i18n-title="interfaceLanguage" data-i18n-aria="interfaceLanguage" title="界面语言" aria-label="界面语言">中文</button>
-          <button type="button" id="btnUiTheme" class="header-chip" data-i18n-title="interfaceTheme" data-i18n-aria="interfaceTheme" title="界面主题" aria-label="界面主题">深色</button>
-          <button type="button" id="btnSettings" class="icon-button" data-i18n-title="openSettings" data-i18n-aria="openSettings" title="打开设置" aria-label="打开设置">⚙</button>
-        </div>
-      </header>
-
       <div id="agentVisualLayer" class="agent-visual-layer" aria-hidden="true"></div>
       <section class="chat-stage">
         <div class="chat-inner">
           <div id="welcomeState" class="welcome-state">
-            <div class="welcome-mark">V</div>
             <div class="welcome-copy">
-              <div class="welcome-kicker"><span aria-hidden="true"></span><span data-i18n="welcomeKicker">自然对话 · 随时打断</span></div>
-              <h1 data-i18n="welcomeTitle">开口就好，我在听</h1>
-              <p data-i18n="welcomeDescription">不需要组织完美的句子。像和一个真正理解你的人聊天一样，自然地说。</p>
-              <div class="welcome-capabilities" data-i18n-aria="capabilityAria" aria-label="语音能力">
-                <span data-i18n="capabilityRealtime">实时回应</span>
-                <span data-i18n="capabilityInterrupt">自然打断</span>
-                <span data-i18n="capabilityTranscript">同步字幕</span>
+              <div class="welcome-kicker"><span data-i18n="welcomeKicker">自由 · 爱的对话空间</span></div>
+              <h1 data-i18n="welcomeTitle">和自由·爱，<br />聊一聊生活</h1>
+              <span class="welcome-rule" aria-hidden="true"></span>
+              <p data-i18n="welcomeDescription">最近有什么事情，<br />让你觉得生活有点不舒服？</p>
+              <div class="welcome-capabilities" data-i18n-aria="capabilityAria" aria-label="对话主题">
+                <span data-i18n="capabilityRealtime">工作与节奏</span>
+                <span data-i18n="capabilityInterrupt">关系与边界</span>
+                <span data-i18n="capabilityTranscript">生活与自己</span>
               </div>
             </div>
           </div>
           <section class="transcript" data-i18n-aria="transcriptAria" aria-label="当前会话内容">
-            <div class="transcript-head">
-              <div class="transcript-title" data-i18n="transcriptTitle">字幕</div>
-            </div>
+            <div class="transcript-head"><div class="transcript-title" data-i18n="transcriptTitle">正在发生的对话</div></div>
             <div id="transcriptMeta" class="transcript-meta" hidden data-i18n="transcriptMetaDefault"></div>
             <div id="transcriptList" class="transcript-list" aria-live="polite"><p class="caption-empty" data-i18n="transcriptEmpty">通话开始后会在这里显示字幕</p></div>
           </section>
@@ -1835,14 +1834,20 @@
 
       <footer class="composer-dock">
         <div class="call-strip">
+          <div class="call-presence" role="status" aria-live="polite">
+            <span id="orb" class="orb idle" aria-hidden="true"></span>
+            <span id="statusText" data-i18n="statusReady">准备就绪</span>
+            <span class="status-divider" aria-hidden="true">·</span>
+            <span id="subText" data-i18n="subReady">点击下方按钮开始</span>
+          </div>
           <div class="voice-wave remote" id="remoteWave" data-wave="remote" aria-hidden="true">
-            <div class="voice-wave-label" data-i18n="meterRemote">对方声音</div>
+            <div class="voice-wave-label" data-i18n="meterRemote">自由·爱</div>
             <div class="voice-wave-bars" id="remoteWaveBars"></div>
           </div>
           <div class="controls" role="group" data-i18n-aria="callControl" aria-label="语音控制">
-            <button type="button" class="btn-side" id="btnMute" data-i18n-title="mute" title="静音" aria-pressed="false" disabled></button>
+            <button type="button" class="btn-side" id="btnMute" data-i18n-title="mute" title="静音" aria-pressed="false" disabled><span class="material-symbols-rounded" aria-hidden="true">mic</span></button>
             <button type="button" class="btn-main is-idle" id="btnMain" data-i18n-title="start" title="开始" data-i18n="start">开始</button>
-            <button type="button" class="btn-side" id="btnSpeaker" data-i18n-title="speakerOff" title="关闭扬声器" aria-pressed="true" disabled></button>
+            <button type="button" class="btn-side" id="btnSpeaker" data-i18n-title="speakerOff" title="关闭扬声器" aria-pressed="true" disabled><span class="material-symbols-rounded" aria-hidden="true">volume_up</span></button>
           </div>
           <div class="voice-wave local" id="localWave" data-wave="local" aria-hidden="true">
             <div class="voice-wave-label" data-i18n="meterLocal">我的声音</div>
@@ -1853,9 +1858,7 @@
           <div class="composer-row">
             <textarea id="textInput" data-i18n-placeholder="composerPlaceholder" placeholder="也可以输入文字…" rows="1" disabled></textarea>
             <button type="button" class="btn-send" id="btnSend" data-i18n-title="send" data-i18n-aria="send" title="发送文本" aria-label="发送文本" disabled>
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 19V5M12 5l-6 6M12 5l6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>
             </button>
           </div>
         </div>
@@ -1868,7 +1871,7 @@
         <div class="settings-head-copy">
           <h2 data-i18n="settingsTitle">设置</h2>
         </div>
-        <button type="button" id="btnCloseSettings" class="icon-button" data-i18n-title="closeSettings" data-i18n-aria="closeSettings" title="关闭设置" aria-label="关闭设置">×</button>
+        <button type="button" id="btnCloseSettings" class="icon-button" data-i18n-title="closeSettings" data-i18n-aria="closeSettings" title="关闭设置" aria-label="关闭设置"><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
       </div>
       <div class="settings-scroll">
         <section class="settings-section">
@@ -2149,16 +2152,16 @@
   var uiLocaleStorageKey = 'chatgpt_web_voice_ui_locale_v1';
   var uiThemeStorageKey = 'chatgpt_web_voice_theme_v1';
   var uiLocale = 'zh';
-  var uiTheme = 'dark';
+  var uiTheme = 'light';
   var lastUiState = { state: 'idle', titleKey: 'statusReady', subKey: 'subReady', title: '', sub: '', titleVars: null, subVars: null };
 
   var I18N = {
     zh: {
       pageTitle: '语音通话',
-      brandTitle: '语音通话',
-      brandSub: '实时陪伴式对话',
+      brandTitle: '自由·爱',
+      brandSub: '从心出发 向善而行',
       newSession: '新会话',
-      sessions: '会话',
+      sessions: '最近',
       sessionNew: '新会话',
       sessionEmpty: '还没有会话记录',
       sessionUntitled: '未命名会话',
@@ -2205,19 +2208,19 @@
       toastTheme: '界面主题已切换',
       roomLabel: 'VOICE ROOM',
       roomPrivacy: 'PRIVATE',
-      welcomeKicker: '自然对话 · 随时打断',
-      welcomeTitle: '开口就好，我在听',
-      welcomeDescription: '不需要组织完美的句子。像和一个真正理解你的人聊天一样，自然地说。',
-      capabilityRealtime: '实时回应',
-      capabilityInterrupt: '自然打断',
-      capabilityTranscript: '同步字幕',
+      welcomeKicker: '自由 · 爱的对话空间',
+      welcomeTitle: '和自由·爱，\n聊一聊生活',
+      welcomeDescription: '最近有什么事情，\n让你觉得生活有点不舒服？',
+      capabilityRealtime: '工作与节奏',
+      capabilityInterrupt: '关系与边界',
+      capabilityTranscript: '生活与自己',
       capabilityAria: '语音能力',
-      privacyStatus: '端到端实时传输',
-      privacyNote: '音频直连上游，不经过网关存储。',
+      privacyStatus: '安心对话',
+      privacyNote: '音频实时传输，不保留原始录音。',
       statusReady: '准备就绪',
       subReady: '点击下方按钮开始',
       meterLocal: '我的声音',
-      meterRemote: '对方声音',
+      meterRemote: '自由·爱',
       mute: '静音',
       unmute: '取消静音',
       callControl: '语音控制',
@@ -2234,7 +2237,7 @@
       composerHintWaiting: '已连接，等待会话就绪…',
       composerHintChannel: '连接中，等待实时通道就绪…',
       transcriptAria: '当前会话内容',
-      transcriptTitle: '字幕',
+      transcriptTitle: '正在发生的对话',
       transcriptMetaDefault: '',
       transcriptMeta: '{profile}打断{suffix}',
       transcriptEmpty: '暂无字幕',
@@ -2330,10 +2333,10 @@
     },
     en: {
       pageTitle: 'Voice Call',
-      brandTitle: 'Voice Call',
-      brandSub: 'A realtime voice companion',
+      brandTitle: 'Freedom · Love',
+      brandSub: 'Begin within, move toward kindness',
       newSession: 'New chat',
-      sessions: 'Chats',
+      sessions: 'Recent',
       sessionNew: 'New chat',
       sessionEmpty: 'No conversations yet',
       sessionUntitled: 'Untitled conversation',
@@ -2380,19 +2383,19 @@
       toastTheme: 'Theme updated',
       roomLabel: 'VOICE ROOM',
       roomPrivacy: 'PRIVATE',
-      welcomeKicker: 'Speak naturally · Interrupt anytime',
-      welcomeTitle: 'Just speak. I am listening.',
-      welcomeDescription: 'No need to find the perfect words. Talk naturally, like someone is truly present with you.',
-      capabilityRealtime: 'Realtime replies',
-      capabilityInterrupt: 'Natural interruption',
-      capabilityTranscript: 'Live transcript',
+      welcomeKicker: 'A space for freedom and love',
+      welcomeTitle: 'Talk with freedom and love\nabout everyday life',
+      welcomeDescription: 'What has been making life\nfeel a little uncomfortable lately?',
+      capabilityRealtime: 'Work & rhythm',
+      capabilityInterrupt: 'Relationships & boundaries',
+      capabilityTranscript: 'Life & self',
       capabilityAria: 'Voice capabilities',
-      privacyStatus: 'End-to-end realtime',
-      privacyNote: 'Audio connects upstream directly and is never stored by the gateway.',
+      privacyStatus: 'A private conversation',
+      privacyNote: 'Audio is transmitted live and raw recordings are not kept.',
       statusReady: 'Ready',
       subReady: 'Tap the button below to start',
       meterLocal: 'You',
-      meterRemote: 'Assistant',
+      meterRemote: 'Freedom · Love',
       mute: 'Mute',
       unmute: 'Unmute',
       callControl: 'Voice control',
@@ -2409,7 +2412,7 @@
       composerHintWaiting: 'Connected — waiting for session…',
       composerHintChannel: 'Connecting — waiting for realtime channel…',
       transcriptAria: 'Current conversation',
-      transcriptTitle: 'Captions',
+      transcriptTitle: 'The conversation now',
       transcriptMetaDefault: '',
       transcriptMeta: '{profile} barge-in{suffix}',
       transcriptEmpty: 'No captions yet',
@@ -3620,6 +3623,8 @@
     transcriptList.textContent = '';
     if (!currentTranscript.length) {
       if (welcomeState) welcomeState.classList.remove('hidden');
+      var emptyVisualLayer = document.getElementById('agentVisualLayer');
+      if (emptyVisualLayer) emptyVisualLayer.classList.remove('has-transcript');
       if (transcriptSection) transcriptSection.classList.add('empty');
       var empty = document.createElement('p');
       empty.className = 'caption-empty';
@@ -3627,12 +3632,27 @@
       transcriptList.appendChild(empty);
       return;
     }
-    if (welcomeState) welcomeState.classList.add('hidden');
+    if (welcomeState) welcomeState.classList.remove('hidden');
+    var activeVisualLayer = document.getElementById('agentVisualLayer');
+    if (activeVisualLayer) activeVisualLayer.classList.add('has-transcript');
     if (transcriptSection) transcriptSection.classList.remove('empty');
+    var lastByRole = { assistant: -1, user: -1 };
+    var previousByRole = { assistant: -1, user: -1 };
+    for (var transcriptIndex = currentTranscript.length - 1; transcriptIndex >= 0; transcriptIndex--) {
+      var transcriptRole = currentTranscript[transcriptIndex].role === 'assistant' ? 'assistant' : 'user';
+      if (lastByRole[transcriptRole] < 0) lastByRole[transcriptRole] = transcriptIndex;
+      else if (previousByRole[transcriptRole] < 0) previousByRole[transcriptRole] = transcriptIndex;
+    }
     var fragment = document.createDocumentFragment();
-    currentTranscript.forEach(function (item) {
+    currentTranscript.forEach(function (item, itemIndex) {
       var row = document.createElement('div');
       row.className = 'caption-log-line ' + (item.role === 'assistant' ? 'assistant' : 'user');
+      if (itemIndex === lastByRole[item.role]) row.classList.add('is-current');
+      else if (itemIndex === previousByRole[item.role]) row.classList.add('is-recent');
+      else row.classList.add('is-history');
+      if (itemIndex === currentTranscript.length - 1 && streamingCaptionRole === item.role && streamingCaptionText) {
+        row.classList.add('is-streaming');
+      }
       var avatar = document.createElement('div');
       avatar.className = 'message-avatar';
       avatar.textContent = item.role === 'assistant' ? 'V' : (uiLocale === 'en' ? 'U' : '你');
@@ -3920,6 +3940,8 @@
       btnMute.setAttribute('aria-pressed', muted ? 'true' : 'false');
       btnMute.setAttribute('title', muted ? t('unmute') : t('mute'));
       btnMute.setAttribute('aria-label', muted ? t('unmute') : t('mute'));
+      var micIcon = btnMute.querySelector('.material-symbols-rounded');
+      if (micIcon) micIcon.textContent = muted ? 'mic_off' : 'mic';
     }
     if (btnSpeaker) {
       btnSpeaker.disabled = !callLive;
@@ -3928,6 +3950,11 @@
       btnSpeaker.setAttribute('aria-pressed', callLive && !speakerMuted ? 'true' : 'false');
       btnSpeaker.setAttribute('title', speakerMuted ? t('speakerOn') : t('speakerOff'));
       btnSpeaker.setAttribute('aria-label', speakerMuted ? t('speakerOn') : t('speakerOff'));
+      var speakerIcon = btnSpeaker.querySelector('.material-symbols-rounded');
+      if (speakerIcon) speakerIcon.textContent = speakerMuted ? 'volume_off' : 'volume_up';
+    }
+    if (window.PangAgentVisual && typeof window.PangAgentVisual.setMuted === 'function') {
+      window.PangAgentVisual.setMuted(!!muted);
     }
   }
 
@@ -4851,7 +4878,7 @@
       analyser.smoothingTimeConstant = 0;
       source.connect(analyser);
       var data = new Uint8Array(analyser.fftSize);
-      var frequencyData = which === 'local' ? new Uint8Array(analyser.frequencyBinCount) : null;
+      var frequencyData = new Uint8Array(analyser.frequencyBinCount);
       function tick() {
         analyser.getByteTimeDomainData(data);
         var sum = 0;
@@ -4869,6 +4896,10 @@
           evaluateAutoInterrupt(rms);
           localRaf = requestAnimationFrame(tick);
         } else {
+          analyser.getByteFrequencyData(frequencyData);
+          if (window.PangAgentVisual && typeof window.PangAgentVisual.processAssistantFrame === 'function') {
+            window.PangAgentVisual.processAssistantFrame(data, frequencyData, audioCtx.sampleRate, performance.now());
+          }
           setWaveLevel('remote', rms);
           // Hold remote speaking state through short pauses in the assistant audio.
           if (inCall && !playbackSuppressed && !speakerMuted && rms > 0.08) {
@@ -5220,6 +5251,10 @@
       if (localRaf) cancelAnimationFrame(localRaf);
       if (remoteRaf) cancelAnimationFrame(remoteRaf);
       localRaf = 0; remoteRaf = 0;
+      if (localSource) { try { localSource.disconnect(); } catch (e) {} localSource = null; }
+      if (remoteSource) { try { remoteSource.disconnect(); } catch (e) {} remoteSource = null; }
+      if (localAnalyser) { try { localAnalyser.disconnect(); } catch (e) {} localAnalyser = null; }
+      if (remoteAnalyser) { try { remoteAnalyser.disconnect(); } catch (e) {} remoteAnalyser = null; }
       try { if (dcChannel) dcChannel.close(); } catch (e) {}
       dcChannel = null;
       await stopVoicePreviewOnly();

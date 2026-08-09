@@ -4,6 +4,20 @@ import { AudioFeatureExtractor } from "./audio-features.js";
 const MANIFEST_URL = "/static/models/agent-particles.json";
 const PULSE_COUNT = 6;
 const QUALITY_COUNTS = [65536, 36864, 16384];
+const SPRING_PROFILES = {
+  energy: [70, 17],
+  attack: [128, 22],
+  low: [58, 15],
+  mid: [78, 17],
+  high: [104, 20],
+  flux: [136, 23],
+  speech: [44, 14],
+  presence: [30, 11],
+  state: [48, 14],
+  assistant: [36, 12],
+  listening: [30, 11],
+  muted: [56, 15],
+};
 
 const vertexShader = /* glsl */ `
   attribute vec2 normalOct;
@@ -22,6 +36,9 @@ const vertexShader = /* glsl */ `
   uniform float uSpeech;
   uniform float uPresence;
   uniform float uStateEnergy;
+  uniform float uAssistantMix;
+  uniform float uListening;
+  uniform float uMuted;
   uniform float uMotionScale;
   uniform float uLayer;
   uniform vec4 uPulses[${PULSE_COUNT}];
@@ -75,61 +92,71 @@ const vertexShader = /* glsl */ `
     vec3 tangent = normalize(cross(normal, reference));
     vec3 bitangent = normalize(cross(normal, tangent));
 
-    float breath = sin(uTime * 0.72 + phase) * 0.5 + 0.5;
-    float slowFlow = sin(dot(basePosition, vec3(3.1, 4.4, 2.7)) + uTime * 0.46 + secondary);
-    vec3 idleOffset = normal * (breath - 0.5) * 0.010;
-    idleOffset += tangent * slowFlow * 0.0045 + bitangent * cos(uTime * 0.38 + phase) * 0.0035;
+    float activeMotion = 1.0 - uMuted * 0.84;
+    float breath = sin(uTime * 1.5708 + phase * 0.08) * 0.5 + 0.5;
+    float slowFlow = sin(dot(basePosition, vec3(3.1, 4.4, 2.7)) + uTime * 0.34 + secondary);
+    basePosition *= 1.0 + uLow * 0.012 * activeMotion;
+    basePosition.z *= 1.0 + uLow * 0.14 * activeMotion;
+    vec3 idleOffset = normal * (breath - 0.5) * mix(0.0045, 0.009, activeMotion);
+    idleOffset += tangent * slowFlow * 0.0032 * activeMotion + bitangent * cos(uTime * 0.31 + phase) * 0.0026 * activeMotion;
 
     vec3 pulseFields = pulseField(basePosition, phase);
     float pulseCrest = pulseFields.x;
     float pulseWake = pulseFields.y;
     float localImpact = pulseFields.z;
     float pulse = clamp(pulseCrest + pulseWake * 0.72 + localImpact * 0.85, 0.0, 1.5);
-    float broadWave = sin(basePosition.y * 8.5 + basePosition.x * 2.6 - uTime * (1.25 + uLow * 1.35));
-    float surfaceFlow = sin(dot(basePosition, vec3(6.4, 4.8, 3.1)) - uTime * (1.5 + uMid * 1.8) + phase * 0.12);
-    float fineWave = sin(dot(basePosition, vec3(15.0, 10.5, 7.0)) - uTime * 5.4 + secondary);
-    float pressure = uLow * (0.008 + uEnergy * 0.020) * broadWave;
-    float propagated = uMid * (pulseCrest * 0.072 + pulseWake * 0.032 + localImpact * 0.045);
-    float residualMotion = uPresence * 0.0045 * sin(dot(basePosition, vec3(4.1, 6.0, 3.4)) - uTime * 1.15);
+    float broadWave = sin(basePosition.y * 7.2 + basePosition.x * 2.2 - uTime * (0.82 + uLow * 0.78));
+    float assistantRhythm = sin(basePosition.x * 5.6 - basePosition.y * 2.4 - uTime * (1.05 + uMid * 1.08));
+    float surfaceFlow = sin(dot(basePosition, vec3(5.8, 4.2, 2.8)) - uTime * (0.92 + uMid * 1.18) + phase * 0.1);
+    float fineWave = sin(dot(basePosition, vec3(13.0, 9.2, 6.4)) - uTime * 3.8 + secondary);
+    float pressure = uLow * (0.006 + uEnergy * 0.015) * broadWave * activeMotion;
+    float propagated = uMid * (pulseCrest * 0.052 + pulseWake * 0.024 + localImpact * 0.034) * activeMotion;
+    float residualMotion = uPresence * 0.0036 * sin(dot(basePosition, vec3(4.1, 6.0, 3.4)) - uTime * 0.95) * activeMotion;
     vec3 voiceOffset = normal * (pressure + propagated + residualMotion);
-    voiceOffset += tangent * uMid * (0.009 + pulse * 0.020) * surfaceFlow;
-    voiceOffset += bitangent * (uHigh * 0.008 + uFlux * 0.018 * pulse) * fineWave;
+    voiceOffset += tangent * uMid * (0.007 + pulse * 0.014) * mix(surfaceFlow, assistantRhythm, uAssistantMix) * activeMotion;
+    voiceOffset += bitangent * (uHigh * 0.005 + uFlux * 0.010 * pulse) * fineWave * activeMotion;
 
-    float detachThreshold = mix(0.978, 0.935, clamp(uEnergy * 0.7 + uFlux * 0.65, 0.0, 1.0));
+    float detachThreshold = mix(0.994, 0.978, clamp(uEnergy * 0.58 + uFlux * 0.42, 0.0, 1.0));
     float detachMask = step(detachThreshold, particleSeed.x) * smoothstep(0.20, 0.76, uEnergy + uAttack * 0.38 + uFlux * 0.42);
-    float detachEnvelope = detachMask * uSpeech * (uEnergy * 0.052 + uAttack * 0.040 + uFlux * 0.032 + pulse * 0.040);
-    detachEnvelope *= 0.72 + 0.28 * sin(uTime * 2.2 + secondary);
+    float detachEnvelope = detachMask * uSpeech * (uEnergy * 0.012 + uAttack * 0.010 + uFlux * 0.008 + pulse * 0.012) * activeMotion;
+    detachEnvelope *= 0.76 + 0.24 * sin(uTime * 1.8 + secondary);
     vec3 detachDirection = normalize(normal * 0.78 + tangent * sin(secondary) * 0.32 + bitangent * cos(phase) * 0.22);
     vec3 detachOffset = detachDirection * detachEnvelope;
+    float dustMask = step(0.983, particleSeed.y) * (1.0 - uMuted * 0.72);
+    float dustDrift = 0.035 + 0.035 * (sin(uTime * 0.42 + phase) * 0.5 + 0.5);
+    vec3 ambientDustOffset = dustMask * (normal * dustDrift + tangent * sin(uTime * 0.31 + secondary) * 0.018 + bitangent * cos(uTime * 0.27 + phase) * 0.014);
 
-    vec3 transformedPosition = basePosition + (idleOffset + voiceOffset + detachOffset) * uMotionScale;
+    vec3 transformedPosition = basePosition + (idleOffset + voiceOffset + detachOffset + ambientDustOffset) * uMotionScale;
     vec4 modelPosition = modelMatrix * vec4(transformedPosition, 1.0);
     vec4 viewPosition = viewMatrix * modelPosition;
     gl_Position = projectionMatrix * viewPosition;
 
     float perspective = clamp(2.5 / max(0.5, -viewPosition.z), 0.55, 2.25);
     float localEnergy = clamp(uEnergy * 0.20 + pulseCrest * 0.62 + pulseWake * 0.22 + localImpact * 0.72 + uFlux * (0.08 + pulse * 0.30), 0.0, 1.45);
-    float energySize = 1.0 + localEnergy * 0.48 + uAttack * localImpact * 0.32;
-    float haloSize = mix(1.0, 2.45 + detachMask * 1.25, uLayer);
+    float energySize = 1.0 + localEnergy * 0.32 + uAttack * localImpact * 0.18;
+    float haloSize = mix(1.0, 2.05 + detachMask * 0.7, uLayer);
     float particleScale = mix(0.84, 1.12, particleSeed.y);
     gl_PointSize = clamp(uPointSize * uPixelRatio * perspective * energySize * haloSize * particleScale, 1.0, 14.0);
 
     vec3 sourceColor = pow(max(particleColor.rgb, vec3(0.0)), vec3(2.2));
     float sourceLuma = dot(sourceColor, vec3(0.2126, 0.7152, 0.0722));
-    sourceColor = mix(vec3(sourceLuma), sourceColor, 1.20);
-    sourceColor = max((sourceColor - vec3(0.085)) * 1.24 + vec3(0.085), vec3(0.0)) * 1.12;
     float sculpturalLight = 0.76 + max(dot(normal, normalize(vec3(-0.32, 0.48, 0.82))), 0.0) * 0.38;
-    sourceColor *= sculpturalLight;
-    vec3 warmEnergy = vec3(1.0, 0.78, 0.52);
-    vec3 paleEnergy = vec3(1.0, 0.93, 0.82);
-    vec3 energyColor = mix(warmEnergy, paleEnergy, clamp(uHigh * 0.36 + uFlux * 0.58, 0.0, 0.82));
-    float colorLift = clamp(uEnergy * 0.10 + localEnergy * 0.46 + uAttack * localImpact * 0.22 + uStateEnergy * 0.10, 0.0, 0.68);
-    vColor = mix(sourceColor, energyColor, colorLift);
+    vec3 brandOrange = vec3(1.0, 0.16, 0.018);
+    vec3 champagne = vec3(0.72, 0.39, 0.13);
+    vec3 softGold = vec3(0.94, 0.57, 0.24);
+    vec3 sage = vec3(0.24, 0.46, 0.32);
+    float orangeMix = smoothstep(0.18, 0.86, particleSeed.y);
+    vec3 brandColor = mix(champagne, brandOrange, orangeMix);
+    float sageMask = smoothstep(0.91, 0.985, particleSeed.x) * (0.55 + uListening * 0.45);
+    brandColor = mix(brandColor, sage, sageMask * (0.34 + uListening * 0.42));
+    vec3 energyColor = mix(brandOrange, softGold, clamp(uAssistantMix * 0.72 + uHigh * 0.24, 0.0, 0.9));
+    float colorLift = clamp(uEnergy * 0.12 + localEnergy * 0.32 + uStateEnergy * 0.08, 0.0, 0.56);
+    vColor = mix(brandColor, energyColor, colorLift) * sculpturalLight * mix(0.92, 1.05, sourceLuma);
     vEnergy = clamp(uEnergy * 0.36 + localEnergy * 0.88 + uPresence * 0.10, 0.0, 1.45);
     vHalo = max(detachMask * (0.22 + uEnergy + uFlux * 0.4), pulseCrest * 0.54 + pulseWake * 0.18 + localImpact * 0.78 + uFlux * pulse * 0.26);
     float sourceAlpha = max(0.1, particleColor.a);
     float densityVariation = mix(0.82, 1.0, particleSeed.x);
-    vAlpha = sourceAlpha * densityVariation * mix(0.80 + uStateEnergy * 0.07, 0.13 + vHalo * 0.46, uLayer);
+    vAlpha = sourceAlpha * densityVariation * mix(0.76 + uStateEnergy * 0.05, 0.09 + vHalo * 0.34, uLayer) * mix(1.0, 0.82, uMuted);
   }
 `;
 
@@ -151,11 +178,11 @@ const fragmentShader = /* glsl */ `
     float glow = exp(-distanceFromCenter * distanceFromCenter * 13.5);
     if (uLayer > 0.5 && vHalo < 0.045) discard;
     float shape = mix(core * 0.74 + hotCore * 0.46 + energizedRim * vEnergy * 0.18, glow, uLayer);
-    float themeAlpha = mix(1.0, 1.12, uLightTheme);
+    float themeAlpha = mix(1.0, 1.06, uLightTheme);
     float alpha = shape * vAlpha * themeAlpha;
     if (alpha < 0.012) discard;
-    vec3 color = vColor * (1.12 + vEnergy * mix(0.46, 0.78, uLayer));
-    color *= mix(1.0, 0.74, uLightTheme);
+    vec3 color = vColor * (1.04 + vEnergy * mix(0.28, 0.52, uLayer));
+    color *= mix(1.0, 0.8, uLightTheme);
     gl_FragColor = vec4(color, alpha);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -186,18 +213,30 @@ class SpringValue {
 class AgentVisual {
   constructor(container) {
     this.container = container;
-    this.extractor = new AudioFeatureExtractor();
+    this.extractors = {
+      mic: new AudioFeatureExtractor(),
+      assistant: new AudioFeatureExtractor(),
+    };
+    this.featureFrames = {
+      mic: this.extractors.mic.snapshot(false),
+      assistant: this.extractors.assistant.snapshot(false),
+    };
     this.state = "idle";
+    this.muted = false;
     this.disposed = false;
     this.visible = !document.hidden;
     this.lastFrame = 0;
     this.frameSamples = [];
+    this.renderValues = Object.create(null);
     this.qualityIndex = this.initialQualityIndex();
     this.pulseCursor = 0;
     this.anchorCursor = 0;
     this.lastPulseAt = -Infinity;
     this.pulses = Array.from({ length: PULSE_COUNT }, () => ({ anchor: new THREE.Vector3(), startedAt: -100, amplitude: 0 }));
-    this.springs = Object.fromEntries(["energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "state"].map((key) => [key, new SpringValue()]));
+    this.springs = Object.fromEntries([
+      "energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "state", "assistant", "listening", "muted",
+    ].map((key) => [key, new SpringValue()]));
+    this.springEntries = Object.entries(this.springs);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.motionScale = this.reducedMotion.matches ? 0.38 : 1;
     this.onVisibility = () => {
@@ -286,6 +325,9 @@ class AgentVisual {
       uSpeech: { value: 0 },
       uPresence: { value: 0 },
       uStateEnergy: { value: 0 },
+      uAssistantMix: { value: 0 },
+      uListening: { value: 0 },
+      uMuted: { value: 0 },
       uMotionScale: { value: this.motionScale },
       uLightTheme: { value: 0 },
       uPulses: { value: this.pulses.map((pulse) => new THREE.Vector4(pulse.anchor.x, pulse.anchor.y, pulse.anchor.z, pulse.startedAt)) },
@@ -322,12 +364,14 @@ class AgentVisual {
     this.resizeObserver.observe(this.container);
     this.themeObserver = new MutationObserver(() => this.updateTheme());
     this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    const welcome = document.getElementById("welcomeState");
-    if (welcome) {
-      this.transcriptObserver = new MutationObserver(() => {
-        this.container.classList.toggle("has-transcript", welcome.classList.contains("hidden"));
-      });
-      this.transcriptObserver.observe(welcome, { attributes: true, attributeFilter: ["class"] });
+    const transcript = document.querySelector(".transcript");
+    if (transcript) {
+      const syncTranscriptState = () => {
+        this.container.classList.toggle("has-transcript", !transcript.classList.contains("empty"));
+      };
+      this.transcriptObserver = new MutationObserver(syncTranscriptState);
+      this.transcriptObserver.observe(transcript, { attributes: true, attributeFilter: ["class"] });
+      syncTranscriptState();
     }
     this.updateTheme();
     this.resize();
@@ -365,33 +409,68 @@ class AgentVisual {
 
   setState(state) {
     this.state = state || "idle";
-    const levels = { idle: 0, connecting: 0.16, listening: 0.1, "assistant-speaking": 0.28, error: 0.18 };
+    const levels = { idle: 0, connecting: 0.1, listening: 0.08, "assistant-speaking": 0.2, error: 0.12 };
     this.springs.state.target = levels[this.state] ?? 0;
+    this.springs.listening.target = this.state === "listening" ? 1 : 0;
+    this.updateAudioTargets();
   }
 
   processMicFrame(timeData, frequencyData, sampleRate, timestamp) {
-    const features = this.extractor.process(timeData, frequencyData, sampleRate, timestamp);
+    return this.processAudioFrame("mic", timeData, frequencyData, sampleRate, timestamp);
+  }
+
+  processAssistantFrame(timeData, frequencyData, sampleRate, timestamp) {
+    return this.processAudioFrame("assistant", timeData, frequencyData, sampleRate, timestamp);
+  }
+
+  processAudioFrame(role, timeData, frequencyData, sampleRate, timestamp) {
+    const extractor = this.extractors[role];
+    if (!extractor) return null;
+    const features = extractor.process(timeData, frequencyData, sampleRate, timestamp);
+    this.featureFrames[role] = features;
     const now = Number.isFinite(Number(timestamp)) ? Number(timestamp) : performance.now();
-    this.springs.energy.target = features.energy;
-    this.springs.attack.target = features.attack;
-    this.springs.low.target = features.low;
-    this.springs.mid.target = features.mid;
-    this.springs.high.target = features.high;
-    this.springs.flux.target = features.spectralFlux;
-    this.springs.speech.target = features.speechActive ? 1 : 0;
-    this.springs.presence.target = features.speechActive
-      ? Math.min(1, 0.22 + features.energy * 0.72 + features.spectralFlux * 0.28)
-      : 0;
+    this.updateAudioTargets();
 
     const transient = Math.max(features.attack, features.spectralFlux * 1.15);
     if (features.onset) {
-      this.triggerPulse(Math.max(0.34, transient, features.energy * 0.86));
+      const roleScale = role === "assistant" ? 0.72 : 0.9;
+      this.triggerPulse(Math.max(0.24, transient * roleScale, features.energy * 0.7));
       this.lastPulseAt = now;
-    } else if (features.speechActive && features.spectralFlux > 0.16 && now - this.lastPulseAt > 210) {
-      this.triggerPulse(Math.max(0.22, features.spectralFlux * 0.88, features.attack * 0.72));
+    } else if (features.speechActive && features.spectralFlux > 0.18 && now - this.lastPulseAt > 280) {
+      this.triggerPulse(Math.max(0.18, features.spectralFlux * 0.68, features.attack * 0.56));
       this.lastPulseAt = now;
     }
     return features;
+  }
+
+  updateAudioTargets() {
+    const mic = this.featureFrames.mic;
+    const assistant = this.featureFrames.assistant;
+    const micPresence = this.muted ? 0 : Math.min(1, mic.energy * 1.35 + (mic.speechActive ? 0.32 : 0));
+    const assistantPresence = Math.min(1, assistant.energy * 1.42 + (assistant.speechActive ? 0.38 : 0));
+    const assistantBias = this.state === "assistant-speaking" ? 0.24 : 0;
+    const assistantWeight = Math.min(1, assistantPresence + assistantBias);
+    const micWeight = Math.min(1, micPresence * (1 - assistantWeight * 0.72));
+    const total = Math.max(0.0001, micWeight + assistantWeight);
+    const assistantMix = Math.min(1, assistantWeight / total);
+    const blend = (key) => Math.min(1, (mic[key] * micWeight + assistant[key] * assistantWeight) / total);
+
+    this.springs.energy.target = Math.max(mic.energy * micWeight, assistant.energy * assistantWeight, blend("energy") * 0.82);
+    this.springs.attack.target = Math.max(mic.attack * micWeight, assistant.attack * assistantWeight);
+    this.springs.low.target = blend("low");
+    this.springs.mid.target = blend("mid");
+    this.springs.high.target = blend("high");
+    this.springs.flux.target = Math.min(1, (mic.spectralFlux * micWeight + assistant.spectralFlux * assistantWeight) / total);
+    this.springs.speech.target = mic.speechActive || assistant.speechActive ? 1 : 0;
+    this.springs.presence.target = Math.max(micPresence, assistantPresence);
+    this.springs.assistant.target = assistantMix;
+    this.springs.muted.target = this.muted ? 1 : 0;
+  }
+
+  setMuted(muted) {
+    this.muted = Boolean(muted);
+    if (this.muted) this.featureFrames.mic = this.extractors.mic.reset();
+    this.updateAudioTargets();
   }
 
   triggerPulse(amplitude) {
@@ -406,8 +485,9 @@ class AgentVisual {
   }
 
   resetAudio() {
-    this.extractor.reset();
-    for (const key of ["energy", "attack", "low", "mid", "high", "flux", "speech", "presence"]) this.springs[key].target = 0;
+    this.featureFrames.mic = this.extractors.mic.reset();
+    this.featureFrames.assistant = this.extractors.assistant.reset();
+    for (const key of ["energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "assistant"]) this.springs[key].target = 0;
   }
 
   schedule() {
@@ -423,20 +503,9 @@ class AgentVisual {
     if (!this.renderer || !this.scene || !this.camera) return;
     const dt = Math.min(0.05, Math.max(1 / 240, (timestamp - this.lastFrame) / 1000 || 1 / 60));
     this.lastFrame = timestamp;
-    const springProfiles = {
-      energy: [70, 17],
-      attack: [128, 22],
-      low: [58, 15],
-      mid: [78, 17],
-      high: [104, 20],
-      flux: [136, 23],
-      speech: [44, 14],
-      presence: [30, 11],
-      state: [48, 14],
-    };
-    const values = {};
-    for (const [key, spring] of Object.entries(this.springs)) {
-      const [stiffness, damping] = springProfiles[key] || [56, 14];
+    const values = this.renderValues;
+    for (const [key, spring] of this.springEntries) {
+      const [stiffness, damping] = SPRING_PROFILES[key] || [56, 14];
       values[key] = spring.step(dt, stiffness, damping);
     }
     const time = timestamp / 1000;
@@ -450,6 +519,9 @@ class AgentVisual {
     this.sharedUniforms.uSpeech.value = Math.max(0, values.speech);
     this.sharedUniforms.uPresence.value = Math.max(0, values.presence);
     this.sharedUniforms.uStateEnergy.value = Math.max(0, values.state);
+    this.sharedUniforms.uAssistantMix.value = Math.max(0, Math.min(1, values.assistant));
+    this.sharedUniforms.uListening.value = Math.max(0, Math.min(1, values.listening));
+    this.sharedUniforms.uMuted.value = Math.max(0, Math.min(1, values.muted));
     for (let i = 0; i < PULSE_COUNT; i += 1) {
       const pulse = this.pulses[i];
       this.sharedUniforms.uPulses.value[i].set(pulse.anchor.x, pulse.anchor.y, pulse.anchor.z, pulse.startedAt);
