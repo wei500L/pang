@@ -185,6 +185,7 @@
       function renderRow(item) {
         var title = item.conversation_title || '未命名对话';
         var media = item.audio_available ? (formatDuration(item.duration_ms) + ' · ' + formatBytes(item.byte_size)) : '无可播放音频';
+        var deleteButton = item.status === 'recording' ? '' : '<button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>';
         return '<tr data-id="' + escapeHTML(item.id) + '">' +
           '<td><div class="record-title"><strong title="' + escapeHTML(title) + '">' + escapeHTML(title) + '</strong><span title="' + escapeHTML(item.id) + '">' + escapeHTML(item.id) + '</span></div></td>' +
           '<td>' + escapeHTML(item.caller_label || item.caller_kind || 'guest') + '</td>' +
@@ -192,7 +193,7 @@
           '<td>' + escapeHTML(media) + '</td>' +
           '<td>' + escapeHTML((item.message_count || 0) + ' 条消息') + '</td>' +
           '<td>' + escapeHTML(formatDate(item.created_at)) + '</td>' +
-          '<td><div class="actions"><button type="button" class="btn btn-small" data-action="view">查看</button><button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button></div></td></tr>';
+          '<td><div class="actions"><button type="button" class="btn btn-small" data-action="view">查看</button>' + deleteButton + '</div></td></tr>';
       }
       function render() {
         document.getElementById('totalCount').textContent = stats.total || 0;
@@ -233,6 +234,7 @@
           document.getElementById('detailVoiceSession').textContent = item.voice_session_id || '—';
           document.getElementById('detailMedia').textContent = formatDuration(item.duration_ms) + ' / ' + formatBytes(item.byte_size);
           var error = document.getElementById('detailError'); error.textContent = item.error_message || ''; error.classList.toggle('show', !!item.error_message);
+          document.getElementById('detailDelete').disabled = item.status === 'recording';
           if (item.audio_available) { detailAudio.hidden = false; detailAudio.src = item.audio_url; detailAudio.load(); }
           else { detailAudio.pause(); detailAudio.removeAttribute('src'); detailAudio.hidden = true; }
           renderMessages(Array.isArray(data.messages) ? data.messages : []); detailDialog.showModal();

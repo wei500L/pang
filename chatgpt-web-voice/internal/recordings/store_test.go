@@ -128,6 +128,9 @@ func TestRecordingCompletionMarksMissingChunksIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := recordingStore.Delete(item.ID); err == nil {
+		t.Fatal("expected active recording deletion to be rejected")
+	}
 	if _, err := recordingStore.AddChunk("admin:root", item.ID, 0, strings.NewReader("partial")); err != nil {
 		t.Fatal(err)
 	}

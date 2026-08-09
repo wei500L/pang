@@ -399,7 +399,7 @@ chatgpt.com + Azure WebRTC
 - 挂断释放**内存绑定**；再拨时凭 `voice_session_id` 从 SQLite 恢复粘性账号与上游线索。
 - 管理端 `/sessions` 可查看元数据，**不展示聊天内容**。下游 `/v1` 本身也不落库聊天正文。
 - 管理端 `/records` 展示内置 `/voice` 产生的用户麦克风录音与聊天快照。编码音频存放在 `VOICE_DATA_DIR/recordings`，SQLite 只保存索引和正文快照，不保存音频 BLOB。
-- 录音使用浏览器 `MediaRecorder` 旁路采集，默认约 24 kbps、5 秒一片、串行上传；上传队列和失败处理与 WebRTC 媒体链路隔离。
+- 录音使用浏览器 `MediaRecorder` 旁路采集，默认约 16 kbps、5 秒一片、串行上传；上传队列和失败处理与 WebRTC 媒体链路隔离。
 
 更细的实现说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 

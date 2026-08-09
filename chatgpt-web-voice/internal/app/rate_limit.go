@@ -22,6 +22,7 @@ type publicRateLimiter struct {
 	mu              sync.Mutex
 	sessions        map[string]publicRateEntry
 	writes          map[string]publicRateEntry
+	recordingChunks map[string]publicRateEntry
 	sessionLimit    int
 	writeLimit      int
 	trustCloudflare bool
@@ -40,6 +41,7 @@ func newPublicRateLimiter(cfg config.Config) *publicRateLimiter {
 	return &publicRateLimiter{
 		sessions:        make(map[string]publicRateEntry),
 		writes:          make(map[string]publicRateEntry),
+		recordingChunks: make(map[string]publicRateEntry),
 		sessionLimit:    sessionLimit,
 		writeLimit:      writeLimit,
 		trustCloudflare: cfg.TrustCloudflareIP,
@@ -55,7 +57,11 @@ func (l *publicRateLimiter) Wrap(next http.Handler) http.Handler {
 		}
 		key := l.clientIP(r)
 		entries, limit := l.writes, l.writeLimit
-		if isHighCostPublicWrite(r) {
+		if isRecordingChunkWrite(r) {
+			// Periodic audio chunks must not consume the quota used by chat and
+			// conversation persistence. Keep a separate bounded bucket instead.
+			entries, limit = l.recordingChunks, 60
+		} else if isHighCostPublicWrite(r) {
 			entries, limit = l.sessions, l.sessionLimit
 		}
 		allowed, retryAfter := l.allow(entries, key, limit)
@@ -70,6 +76,12 @@ func (l *publicRateLimiter) Wrap(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isRecordingChunkWrite(r *http.Request) bool {
+	return r.Method == http.MethodPut &&
+		strings.HasPrefix(r.URL.Path, "/api/recordings/") &&
+		strings.Contains(r.URL.Path, "/chunks/")
 }
 
 func (l *publicRateLimiter) allow(entries map[string]publicRateEntry, key string, limit int) (bool, int) {

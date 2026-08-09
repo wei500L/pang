@@ -54,7 +54,10 @@ test("admin session inventory exposes guest stats and filtering", () => {
 test("voice page records the microphone through a bounded best-effort upload queue", () => {
   assert.match(voiceHTML, /new MediaRecorder\(stream/);
   assert.match(voiceHTML, /RECORDING_CHUNK_MS = 5000/);
+  assert.match(voiceHTML, /RECORDING_AUDIO_BITS_PER_SECOND = 16000/);
   assert.match(voiceHTML, /RECORDING_MAX_PENDING_BYTES = 8 << 20/);
+  assert.match(voiceHTML, /RECORDING_FETCH_TIMEOUT_MS = 8000/);
+  assert.match(voiceHTML, /state\.uploadDisabled = true/);
   assert.match(voiceHTML, /startMicrophoneRecording\(\)\.catch/);
   assert.match(voiceHTML, /finishMicrophoneRecording\(updateText \? 'hangup' : 'transport_end'\)/);
   assert.match(voiceHTML, /Recording is strictly best-effort/);

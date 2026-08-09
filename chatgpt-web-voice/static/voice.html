@@ -2059,8 +2059,9 @@
   var remoteStream = null;
   var microphoneRecording = null;
   var RECORDING_CHUNK_MS = 5000;
-  var RECORDING_AUDIO_BITS_PER_SECOND = 24000;
+  var RECORDING_AUDIO_BITS_PER_SECOND = 16000;
   var RECORDING_MAX_PENDING_BYTES = 8 << 20;
+  var RECORDING_FETCH_TIMEOUT_MS = 8000;
   var audioCtx = null;
   var localAnalyser = null, remoteAnalyser = null;
   var localSource = null, remoteSource = null;
@@ -5020,11 +5021,22 @@
     return (data && data.detail && (data.detail.error || JSON.stringify(data.detail))) || ('HTTP ' + response.status);
   }
 
+  function recordingFetch(url, options, timeoutMs) {
+    options = options || {};
+    if (!options.priority) options.priority = 'low';
+    var controller = window.AbortController ? new AbortController() : null;
+    if (controller) options.signal = controller.signal;
+    var timer = setTimeout(function () {
+      if (controller) controller.abort();
+    }, Math.max(1000, timeoutMs || RECORDING_FETCH_TIMEOUT_MS));
+    return gatewayFetch(url, options).finally(function () { clearTimeout(timer); });
+  }
+
   async function uploadRecordingChunk(state, blob, sequence) {
     var lastError = null;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        var response = await gatewayFetch('/api/recordings/' + encodeURIComponent(state.id) + '/chunks/' + sequence, {
+        var response = await recordingFetch('/api/recordings/' + encodeURIComponent(state.id) + '/chunks/' + sequence, {
           method: 'PUT',
           headers: { 'content-type': state.mimeType },
           body: blob
@@ -5032,9 +5044,12 @@
         if (response.ok) return;
         var data = {};
         try { data = await response.json(); } catch (e) {}
-        throw new Error(recordingResponseError(response, data));
+        var responseError = new Error(recordingResponseError(response, data));
+        responseError.retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        throw responseError;
       } catch (error) {
         lastError = error;
+        if (error && error.retryable === false) break;
         if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 350 * (attempt + 1)); });
       }
     }
@@ -5048,16 +5063,19 @@
   }
 
   function enqueueRecordingChunk(state, blob) {
-    if (!state || state.finalized || !blob || !blob.size) return;
+    if (!state || state.finalized || state.uploadDisabled || !blob || !blob.size) return;
     var sequence = state.sequence++;
     if (state.pendingBytes + blob.size > RECORDING_MAX_PENDING_BYTES) {
+      state.uploadDisabled = true;
       markRecordingFailed(state, 'recording upload queue exceeded 8 MiB');
       return;
     }
     state.pendingBytes += blob.size;
     state.uploadChain = state.uploadChain.catch(function () {}).then(function () {
+      if (state.uploadDisabled) return;
       return uploadRecordingChunk(state, blob, sequence);
     }).catch(function (error) {
+      state.uploadDisabled = true;
       markRecordingFailed(state, error);
     }).then(function () {
       state.pendingBytes = Math.max(0, state.pendingBytes - blob.size);
@@ -5069,23 +5087,35 @@
     state.finalized = true;
     try {
       await state.uploadChain.catch(function () {});
-      await conversationWriteChain.catch(function () {});
-      var response = await gatewayFetch('/api/recordings/' + encodeURIComponent(state.id) + '/complete', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chunk_count: state.sequence,
-          duration_ms: Math.max(0, (state.stoppedAt || Date.now()) - state.startedAt),
-          voice_session_id: state.voiceSessionId || '',
-          failed: !!state.failed,
-          error_message: state.errorMessage || ''
-        }),
-        keepalive: true
+      await Promise.race([
+        conversationWriteChain.catch(function () {}),
+        new Promise(function (resolve) { setTimeout(resolve, 2500); })
+      ]);
+      var completeBody = JSON.stringify({
+        chunk_count: state.sequence,
+        duration_ms: Math.max(0, (state.stoppedAt || Date.now()) - state.startedAt),
+        voice_session_id: state.voiceSessionId || '',
+        failed: !!state.failed,
+        error_message: state.errorMessage || ''
       });
-      if (!response.ok) {
+      var response = null;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await recordingFetch('/api/recordings/' + encodeURIComponent(state.id) + '/complete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: completeBody,
+            keepalive: true
+          });
+          if (response.ok) break;
+        } catch (completeError) {
+          if (attempt === 1) throw completeError;
+        }
+      }
+      if (!response || !response.ok) {
         var data = {};
-        try { data = await response.json(); } catch (e) {}
-        throw new Error(recordingResponseError(response, data));
+        try { data = response ? await response.json() : {}; } catch (e) {}
+        throw new Error(response ? recordingResponseError(response, data) : 'recording completion failed');
       }
       log('microphone recording completed', state.id, 'chunks=' + state.sequence);
     } catch (error) {
@@ -5099,7 +5129,7 @@
     var stream = localStream;
     var mimeType = preferredRecordingMimeType() || 'audio/webm';
     try {
-      var response = await gatewayFetch('/api/recordings', {
+      var response = await recordingFetch('/api/recordings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -5114,7 +5144,7 @@
       var recordingId = data.recording && data.recording.id;
       if (!recordingId) return;
       if (!inCall || localStream !== stream || !stream.active) {
-        gatewayFetch('/api/recordings/' + encodeURIComponent(recordingId) + '/complete', {
+        recordingFetch('/api/recordings/' + encodeURIComponent(recordingId) + '/complete', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ chunk_count: 0, duration_ms: 0, voice_session_id: voiceSessionId || '', failed: true, error_message: 'call ended before recording started' }),
@@ -5150,6 +5180,7 @@
         uploadChain: Promise.resolve(),
         failed: !recorder,
         errorMessage: recorderError,
+        uploadDisabled: false,
         finalized: false,
         stopFallbackTimer: 0
       };
@@ -5166,6 +5197,7 @@
       };
       recorder.onstop = function () {
         if (state.stopFallbackTimer) clearTimeout(state.stopFallbackTimer);
+        if (microphoneRecording === state) microphoneRecording = null;
         finalizeRecordingState(state);
       };
       recorder.start(RECORDING_CHUNK_MS);

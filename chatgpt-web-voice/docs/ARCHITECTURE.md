@@ -230,7 +230,7 @@ api_key:<numeric_id>
 ```text
 localStream
 ├── RTCPeerConnection.addTrack → 上游实时媒体（原路径不变）
-└── MediaRecorder（约 24 kbps Opus，5 秒一片）
+└── MediaRecorder（约 16 kbps Opus，5 秒一片）
       → PUT /api/recordings/{id}/chunks/{sequence}
       → data/recordings/chunks
       → complete 时顺序组装为 webm / m4a / ogg

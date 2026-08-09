@@ -162,7 +162,7 @@ func (s *Store) AddChunk(owner, id string, sequence int, reader io.Reader) (Item
 	if sequence < 0 || sequence > 100000 {
 		return Item{}, &Error{Message: "invalid recording chunk sequence"}
 	}
-	item, err := s.GetOwned(owner, id)
+	item, err := s.getUploadTarget(owner, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -193,18 +193,32 @@ func (s *Store) AddChunk(owner, id string, sequence int, reader io.Reader) (Item
 		return Item{}, &Error{Message: "recording chunk is empty"}
 	}
 
-	s.db.Lock()
-	_, err = s.db.Conn().Exec(`
-		UPDATE recordings SET
-			chunk_count = chunk_count + 1,
-			byte_size = byte_size + ?,
-			updated_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND owner = ?`, written, item.ID, strings.TrimSpace(owner))
-	s.db.Unlock()
-	if err != nil {
-		return Item{}, fmt.Errorf("update recording chunk metadata: %w", err)
+	// Per-chunk progress is intentionally not written to SQLite. Complete()
+	// derives the authoritative count and byte size from files, keeping the
+	// shared single-connection database out of the live recording data path.
+	return item, nil
+}
+
+func (s *Store) getUploadTarget(owner, id string) (Item, error) {
+	owner = strings.TrimSpace(owner)
+	id = normalizeID(id)
+	if id == "" {
+		return Item{}, ErrNotFound
 	}
-	return s.GetOwned(owner, item.ID)
+	var item Item
+	s.db.Lock()
+	err := s.db.Conn().QueryRow(
+		`SELECT id, owner, status FROM recordings WHERE id = ? AND owner = ?`,
+		id, owner,
+	).Scan(&item.ID, &item.Owner, &item.Status)
+	s.db.Unlock()
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, ErrNotFound
+	}
+	if err != nil {
+		return Item{}, fmt.Errorf("authorize recording chunk: %w", err)
+	}
+	return item, nil
 }
 
 func (s *Store) Complete(owner, id string, input CompleteInput) (Item, error) {
@@ -336,19 +350,10 @@ func (s *Store) GetAdmin(id string) (Detail, error) {
 		return Detail{}, ErrNotFound
 	}
 	s.db.Lock()
-	row := s.db.Conn().QueryRow(`
-		SELECT id, owner, conversation_id, conversation_title, voice_session_id,
-			mime_type, file_ext, status, chunk_count, byte_size, duration_ms,
-			error_message, created_at, updated_at, completed_at,
-			(SELECT COUNT(*) FROM recording_messages rm WHERE rm.recording_id = recordings.id)
-		FROM recordings WHERE id = ?`, id)
-	item, err := scanItem(row)
+	item, err := s.getAdminItemUnlocked(id)
 	if err != nil {
 		s.db.Unlock()
-		if errors.Is(err, sql.ErrNoRows) {
-			return Detail{}, ErrNotFound
-		}
-		return Detail{}, fmt.Errorf("get recording: %w", err)
+		return Detail{}, err
 	}
 	messages, err := s.messagesUnlocked(item)
 	s.db.Unlock()
@@ -383,11 +388,11 @@ func (s *Store) List(filter ListFilter) ([]Item, error) {
 		SELECT id, owner, conversation_id, conversation_title, voice_session_id,
 			mime_type, file_ext, status, chunk_count, byte_size, duration_ms,
 			error_message, created_at, updated_at, completed_at,
-			CASE
-				WHEN (SELECT COUNT(*) FROM recording_messages rm WHERE rm.recording_id = recordings.id) > 0
-				THEN (SELECT COUNT(*) FROM recording_messages rm WHERE rm.recording_id = recordings.id)
-				ELSE (SELECT COUNT(*) FROM conversation_messages cm WHERE cm.conversation_id = recordings.conversation_id)
-			END
+			COALESCE(
+				NULLIF((SELECT COUNT(*) FROM recording_messages rm WHERE rm.recording_id = recordings.id), 0),
+				(SELECT COUNT(*) FROM conversation_messages cm WHERE cm.conversation_id = recordings.conversation_id),
+				0
+			)
 		FROM recordings WHERE ` + strings.Join(clauses, " AND ") + `
 		ORDER BY created_at DESC, id DESC LIMIT ?`
 	s.db.Lock()
@@ -438,21 +443,53 @@ func (s *Store) Stats() (Stats, error) {
 }
 
 func (s *Store) OpenAudio(id string) (*os.File, Item, error) {
-	detail, err := s.GetAdmin(id)
-	if err != nil {
-		return nil, Item{}, err
-	}
-	if !detail.Recording.AudioAvailable {
+	id = normalizeID(id)
+	if id == "" {
 		return nil, Item{}, ErrNotFound
 	}
-	file, err := os.Open(s.audioPath(detail.Recording.ID, detail.Recording.FileExt))
+	var item Item
+	s.db.Lock()
+	err := s.db.Conn().QueryRow(`
+		SELECT id, mime_type, file_ext, status, byte_size
+		FROM recordings WHERE id = ?`, id,
+	).Scan(&item.ID, &item.MIMEType, &item.FileExt, &item.Status, &item.ByteSize)
+	s.db.Unlock()
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, Item{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, Item{}, fmt.Errorf("get recording audio metadata: %w", err)
+	}
+	item.AudioAvailable = item.ByteSize > 0
+	if !item.AudioAvailable {
+		return nil, Item{}, ErrNotFound
+	}
+	file, err := os.Open(s.audioPath(item.ID, item.FileExt))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, Item{}, ErrNotFound
 	}
 	if err != nil {
 		return nil, Item{}, fmt.Errorf("open recording audio: %w", err)
 	}
-	return file, detail.Recording, nil
+	return file, item, nil
+}
+
+func (s *Store) getAdminItemUnlocked(id string) (Item, error) {
+	row := s.db.Conn().QueryRow(`
+		SELECT id, owner, conversation_id, conversation_title, voice_session_id,
+			mime_type, file_ext, status, chunk_count, byte_size, duration_ms,
+			error_message, created_at, updated_at, completed_at,
+			(SELECT COUNT(*) FROM recording_messages rm WHERE rm.recording_id = recordings.id)
+		FROM recordings WHERE id = ?`, id)
+	item, err := scanItem(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, ErrNotFound
+	}
+	if err != nil {
+		return Item{}, fmt.Errorf("get recording: %w", err)
+	}
+	item.AudioAvailable = item.ByteSize > 0
+	return item, nil
 }
 
 func (s *Store) Delete(id string) error {
@@ -461,14 +498,17 @@ func (s *Store) Delete(id string) error {
 		return ErrNotFound
 	}
 	s.db.Lock()
-	var ext string
-	err := s.db.Conn().QueryRow(`SELECT file_ext FROM recordings WHERE id = ?`, id).Scan(&ext)
+	var ext, status string
+	err := s.db.Conn().QueryRow(`SELECT file_ext, status FROM recordings WHERE id = ?`, id).Scan(&ext, &status)
 	s.db.Unlock()
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("find recording for delete: %w", err)
+	}
+	if status == StatusRecording {
+		return &Error{Message: "an active recording cannot be deleted"}
 	}
 	if err := os.Remove(s.audioPath(id, ext)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete recording audio: %w", err)
