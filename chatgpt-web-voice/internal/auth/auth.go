@@ -356,7 +356,7 @@ func (m *Manager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   requestIsHTTPS(r),
+		Secure:   m.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	}
 	if input.Remember {
@@ -391,7 +391,7 @@ func (m *Manager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   requestIsHTTPS(r),
+		Secure:   m.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -400,7 +400,7 @@ func (m *Manager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: false,
-		Secure:   requestIsHTTPS(r),
+		Secure:   m.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	logging.FromContext(r.Context()).Info("logout_succeeded", "username", Username(r.Context()))
@@ -600,7 +600,7 @@ func (m *Manager) ensureGuestCookie(w http.ResponseWriter, r *http.Request) stri
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   requestIsHTTPS(r),
+		Secure:   m.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(guestCookieTTL),
 		MaxAge:   int(guestCookieTTL.Seconds()),
@@ -640,11 +640,14 @@ func isBrowserNavigation(r *http.Request) bool {
 	return !strings.HasPrefix(r.URL.Path, "/api/") && strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
 }
 
-func requestIsHTTPS(r *http.Request) bool {
-	// Only the direct TLS state of this process is considered. Reverse proxies
-	// such as Caddy should terminate TLS; this gateway does not interpret
-	// X-Forwarded-Proto.
-	return r != nil && r.TLS != nil
+func (m *Manager) requestIsHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return m != nil && m.trustCloudflareIP && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func (m *Manager) clientIP(r *http.Request) string {
@@ -730,7 +733,7 @@ func (m *Manager) issueCSRFCookie(w http.ResponseWriter, r *http.Request, rememb
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false, // must be readable by same-origin JS
-		Secure:   requestIsHTTPS(r),
+		Secure:   m.requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	}
 	if remember {

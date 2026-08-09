@@ -4,6 +4,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+)
+
+const (
+	staticDocumentCacheControl = "public, max-age=300, stale-while-revalidate=86400"
+	staticAssetCacheControl    = "public, max-age=3600, stale-while-revalidate=86400"
 )
 
 // registerPublicStaticAssets serves CSS/JS/asset files under /static/ without
@@ -73,8 +79,12 @@ func serveFile(w http.ResponseWriter, r *http.Request, path string) {
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Pragma", "no-cache")
+		if strings.HasPrefix(r.URL.Path, "/static/") {
+			w.Header().Set("Cache-Control", staticCacheControl(r.URL.Path))
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Pragma", "no-cache")
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -85,6 +95,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func staticCacheControl(requestPath string) string {
+	switch strings.ToLower(filepath.Ext(requestPath)) {
+	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico",
+		".woff", ".woff2", ".ttf", ".otf", ".bin", ".glb":
+		return staticAssetCacheControl
+	default:
+		return staticDocumentCacheControl
+	}
 }
 
 func writeJSONError(w http.ResponseWriter, msg string) {

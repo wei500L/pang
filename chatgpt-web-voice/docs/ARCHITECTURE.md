@@ -124,7 +124,7 @@ root mux
 最外层：
 
 - `logging.HTTPMiddleware`：request id、耗时、状态码；
-- `securityHeaders`：`Cache-Control: no-store`、`X-Frame-Options: DENY`、麦克风 Permissions-Policy 等。
+- `securityHeaders`：页面与 API 使用 `Cache-Control: no-store`；`/static/*` 按资源类型使用短期浏览器/CDN 缓存与后台重新验证；同时设置 `X-Frame-Options: DENY`、麦克风 Permissions-Policy 等。
 
 ### 4.1 管理员 / 浏览器鉴权
 

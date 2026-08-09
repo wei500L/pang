@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>语音通话</title>
   <link rel="icon" type="image/png" href="/static/assets/voice-room/pangdonglai-dl-monogram.png" />
+  <link rel="preload" as="image" href="/static/assets/voice-room/natural-room-wide.png" media="(min-width: 901px)" fetchpriority="high" />
+  <link rel="preload" as="image" href="/static/assets/voice-room/natural-room-tall.png" media="(max-width: 900px)" fetchpriority="high" />
+  <link rel="modulepreload" href="/static/vendor/three/three.module.min.js" />
+  <link rel="modulepreload" href="/static/agent-visual/audio-features.js" />
+  <link rel="preload" as="fetch" href="/static/models/agent-particles.bin" crossorigin="anonymous" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -1760,7 +1765,7 @@
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
       </button>
       <a class="freedom-wordmark" href="/voice" aria-label="自由·爱">
-        <img src="/static/assets/voice-room/freedom-love-wordmark-retina.png" alt="自由·爱，从心出发，向善而行" />
+        <img src="/static/assets/voice-room/freedom-love-wordmark-retina.png" width="1330" height="490" alt="自由·爱，从心出发，向善而行" />
       </a>
     </div>
     <nav class="brand-navigation" aria-label="品牌导航">
@@ -1778,7 +1783,7 @@
         <span class="material-symbols-rounded" aria-hidden="true">tune</span>
       </button>
       <a class="pangdonglai-signature" href="/voice" aria-label="胖东来">
-        <img class="pangdonglai-brandmark" src="/static/assets/voice-room/pangdonglai-brandmark-retina.png" alt="" aria-hidden="true" />
+        <img class="pangdonglai-brandmark" src="/static/assets/voice-room/pangdonglai-brandmark-retina.png" width="897" height="310" alt="" aria-hidden="true" />
       </a>
     </div>
     <div id="toast" class="header-toast" role="status" aria-live="polite"></div>
@@ -1867,8 +1872,9 @@
         <div id="composerHint" class="hint" data-state="idle" data-i18n="composerHintIdle" role="status" aria-live="polite"></div>
       </footer>
     </main>
+  </div>
 
-    <aside id="settingsPanel" class="settings-panel" aria-hidden="true">
+  <aside id="settingsPanel" class="settings-panel" aria-hidden="true">
       <div class="settings-head">
         <div class="settings-head-copy">
           <h2 data-i18n="settingsTitle">设置</h2>
@@ -1938,9 +1944,8 @@
           </div>
         </section>
       </div>
-    </aside>
-    <div id="settingsBackdrop" class="settings-backdrop"></div>
-  </div>
+  </aside>
+  <div id="settingsBackdrop" class="settings-backdrop"></div>
   <dialog id="renameConversationDialog" class="conversation-dialog">
     <form id="renameConversationForm" novalidate>
       <h2 data-i18n="renameSessionTitle">重命名会话</h2>
@@ -2010,6 +2015,7 @@
   var languageTrigger = document.getElementById('languageTrigger');
   var languageTriggerText = document.getElementById('languageTriggerText');
   var languageMenu = document.getElementById('languageMenu');
+  var languageMenuNeedsRender = true;
   var remoteAudio = document.getElementById('remoteAudio');
   var btnMain = document.getElementById('btnMain');
   var btnMute = document.getElementById('btnMute');
@@ -2744,6 +2750,7 @@
 
   function openLanguageMenu() {
     if (!languageDropdown || !languageMenu || !languageTrigger) return;
+    if (languageMenuNeedsRender) renderLanguageMenuOptions();
     // Mount on body so settings-panel transform does not trap fixed positioning.
     if (languageMenu.parentNode !== document.body) {
       document.body.appendChild(languageMenu);
@@ -2770,7 +2777,7 @@
     var next = normalizeLanguage(code || gatewayVoiceDefaults.language_code);
     languageEl.value = next;
     if (languageTriggerText) languageTriggerText.textContent = getLanguageLabel(next);
-    if (languageMenu) {
+    if (languageMenu && !languageMenuNeedsRender) {
       languageMenu.querySelectorAll('.select-dropdown-option').forEach(function (button) {
         var active = button.getAttribute('data-value') === next;
         button.classList.toggle('active', active);
@@ -2784,34 +2791,42 @@
     }
   }
 
+  function renderLanguageMenuOptions() {
+    if (!languageMenu) return;
+    var selected = normalizeLanguage((languageEl && languageEl.value) || gatewayVoiceDefaults.language_code);
+    languageMenu.textContent = '';
+    spokenLanguageMeta.forEach(function (row) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'select-dropdown-option' + (row[0] === selected ? ' active' : '');
+      button.setAttribute('role', 'option');
+      button.setAttribute('data-value', row[0]);
+      button.setAttribute('aria-selected', row[0] === selected ? 'true' : 'false');
+      button.textContent = languageOptionLabel(row);
+      button.onclick = function () {
+        setLanguageValue(row[0], true);
+        closeLanguageMenu();
+      };
+      languageMenu.appendChild(button);
+    });
+    languageMenuNeedsRender = false;
+  }
+
   function fillLanguageOptions() {
     if (!languageEl) return;
     var prev = normalizeLanguage(languageEl.value || gatewayVoiceDefaults.language_code);
     languageEl.innerHTML = '';
-    if (languageMenu) languageMenu.textContent = '';
+    languageMenuNeedsRender = true;
     spokenLanguageMeta.forEach(function (row) {
       var opt = document.createElement('option');
       opt.value = row[0];
       opt.textContent = languageOptionLabel(row);
       if (row[0] === prev) opt.selected = true;
       languageEl.appendChild(opt);
-      if (languageMenu) {
-        var button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'select-dropdown-option' + (row[0] === prev ? ' active' : '');
-        button.setAttribute('role', 'option');
-        button.setAttribute('data-value', row[0]);
-        button.setAttribute('aria-selected', row[0] === prev ? 'true' : 'false');
-        button.textContent = languageOptionLabel(row);
-        button.onclick = function () {
-          setLanguageValue(row[0], true);
-          closeLanguageMenu();
-        };
-        languageMenu.appendChild(button);
-      }
     });
     languageEl.value = prev;
     if (languageTriggerText) languageTriggerText.textContent = getLanguageLabel(prev);
+    if (languageDropdown && languageDropdown.classList.contains('open')) renderLanguageMenuOptions();
   }
 
   function fillInterruptOptions() {
@@ -2847,9 +2862,6 @@
     renderTranscript();
     renderSessionList();
     updateSessionHeader();
-    if (typeof refreshMics === 'function') {
-      try { refreshMics(); } catch (e) {}
-    }
     // restore status texts via last keys when possible
     if (lastUiState.titleKey || lastUiState.subKey) {
       setUI(
@@ -2871,6 +2883,7 @@
     try { localStorage.setItem(uiLocaleStorageKey, uiLocale); } catch (e) {}
     applyI18nDom();
     refreshLocalizedControls();
+    refreshMics().catch(function () {});
     if (announce) toast(t('toastUiLang'));
   }
 
@@ -3188,6 +3201,8 @@
         conversationSessions = [initial];
       }
       activeSessionId = conversationSessions[0].id;
+      renderSessionList();
+      updateSessionHeader();
       await loadConversationDetail(activeSessionId);
       conversationReady = true;
       conversationSyncErrorShown = false;
@@ -5360,6 +5375,7 @@
   function setSettingsOpen(open) {
     document.body.classList.toggle('settings-open', !!open);
     if (settingsPanel) settingsPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open) refreshMics().catch(function () {});
     if (!open) closeLanguageMenu();
   }
 
@@ -5622,9 +5638,8 @@
     initializeConversationStore().catch(function () {});
     loadAuthSession().catch(function () {});
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-      navigator.mediaDevices.enumerateDevices().then(refreshMics).catch(function () {});
+      refreshMics().catch(function () {});
     }
-    setTimeout(warmMicPermission, 600);
   }
 
   try {

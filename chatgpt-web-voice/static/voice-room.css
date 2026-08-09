@@ -93,7 +93,9 @@ body.app-shell a:focus-visible {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  background: #f4eee5;
+  background:
+    radial-gradient(ellipse at 78% 22%, rgba(255, 250, 229, 0.78) 0%, rgba(245, 237, 225, 0.34) 42%, transparent 70%),
+    linear-gradient(120deg, #f6f0e7 0%, #eee4d7 58%, #e8dfd2 100%);
 }
 
 .room-background,
@@ -105,7 +107,14 @@ body.app-shell a:focus-visible {
   background-position: center center;
   background-repeat: no-repeat;
   background-size: cover;
-  will-change: transform, opacity;
+  transition: opacity 420ms ease;
+  will-change: transform;
+}
+
+html[data-room-background-state="loading"] .room-background,
+html[data-room-background-state="loading"] .room-leaf-shadow,
+html[data-room-background-state="loading"] .room-foreground {
+  opacity: 0;
 }
 
 .room-background {
@@ -172,8 +181,20 @@ body.app-shell a:focus-visible {
 }
 
 @keyframes room-leaf-drift {
-  from { margin: -2px 0 0 -3px; }
-  to { margin: 3px -4px -2px 4px; }
+  from {
+    transform: translate3d(
+      calc(var(--room-parallax-shadow-x) - 3px),
+      calc(var(--room-parallax-shadow-y) - 2px),
+      0
+    ) scale(1.045);
+  }
+  to {
+    transform: translate3d(
+      calc(var(--room-parallax-shadow-x) + 4px),
+      calc(var(--room-parallax-shadow-y) + 3px),
+      0
+    ) scale(1.045);
+  }
 }
 
 .brand-header {
@@ -1199,6 +1220,16 @@ body.app-shell .settings-panel {
   backdrop-filter: blur(28px) saturate(1.06);
   -webkit-backdrop-filter: blur(28px) saturate(1.06);
   transform: translateX(calc(100% + 20px));
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 220ms ease, visibility 0s linear 220ms;
+}
+
+body.app-shell.settings-open .settings-panel {
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
+  transition-delay: 0s;
 }
 
 body.app-shell .settings-head,

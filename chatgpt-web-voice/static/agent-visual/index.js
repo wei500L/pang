@@ -301,8 +301,9 @@ class AgentVisual {
     const buffer = await binaryResponse.arrayBuffer();
     this.buildScene(buffer);
     this.observeLayout();
-    this.container.classList.add("is-ready");
     this.lastFrame = performance.now();
+    this.render(this.lastFrame);
+    this.container.classList.add("is-ready");
     this.schedule();
     return this;
   }

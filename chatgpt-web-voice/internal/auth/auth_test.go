@@ -475,3 +475,18 @@ func TestLoginClientIPTrustsCloudflareOnlyWhenEnabled(t *testing.T) {
 		t.Fatalf("untrusted client ip=%q", got)
 	}
 }
+
+func TestTrustedHTTPSProxyMarksCookiesSecure(t *testing.T) {
+	manager := testManager().WithTrustedCloudflareIP(true)
+	req := httptest.NewRequest(http.MethodGet, "/voice", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp := httptest.NewRecorder()
+	manager.Public(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(resp, req)
+	for _, cookie := range resp.Result().Cookies() {
+		if (cookie.Name == guestCookieName || cookie.Name == csrfCookieName) && !cookie.Secure {
+			t.Fatalf("cookie %s must be secure behind trusted HTTPS proxy", cookie.Name)
+		}
+	}
+}

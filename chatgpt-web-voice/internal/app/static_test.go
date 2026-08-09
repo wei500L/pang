@@ -75,3 +75,37 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestSecurityHeadersUsesCacheablePolicyForStaticAssets(t *testing.T) {
+	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tests := []struct {
+		path       string
+		cache      string
+		wantPragma bool
+	}{
+		{path: "/voice", cache: "no-store", wantPragma: true},
+		{path: "/api/conversations", cache: "no-store", wantPragma: true},
+		{path: "/static/voice-room.css", cache: staticDocumentCacheControl},
+		{path: "/static/agent-visual/index.js", cache: staticDocumentCacheControl},
+		{path: "/static/assets/voice-room/natural-room-wide.png", cache: staticAssetCacheControl},
+		{path: "/static/models/agent-particles.bin", cache: staticAssetCacheControl},
+	}
+
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, test.path, nil)
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			if got := resp.Header().Get("Cache-Control"); got != test.cache {
+				t.Fatalf("Cache-Control=%q want %q", got, test.cache)
+			}
+			if got := resp.Header().Get("Pragma"); (got != "") != test.wantPragma {
+				t.Fatalf("Pragma=%q want present=%v", got, test.wantPragma)
+			}
+		})
+	}
+}

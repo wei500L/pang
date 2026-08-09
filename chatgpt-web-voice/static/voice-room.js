@@ -2,6 +2,33 @@ const root = document.documentElement;
 const body = document.body;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const coarsePointer = window.matchMedia("(pointer: coarse)");
+const tallRoomBackground = window.matchMedia("(max-width: 900px)");
+
+root.dataset.roomBackgroundState = "loading";
+const roomBackgroundImage = new Image();
+roomBackgroundImage.decoding = "async";
+roomBackgroundImage.fetchPriority = "high";
+roomBackgroundImage.src = tallRoomBackground.matches
+  ? "/static/assets/voice-room/natural-room-tall.png"
+  : "/static/assets/voice-room/natural-room-wide.png";
+
+let roomBackgroundSettled = false;
+function settleRoomBackground(state) {
+  if (roomBackgroundSettled) return;
+  roomBackgroundSettled = true;
+  root.dataset.roomBackgroundState = state;
+}
+
+roomBackgroundImage.addEventListener("load", () => settleRoomBackground("ready"), { once: true });
+roomBackgroundImage.addEventListener("error", () => settleRoomBackground("failed"), { once: true });
+if (typeof roomBackgroundImage.decode === "function") {
+  roomBackgroundImage.decode().then(
+    () => settleRoomBackground("ready"),
+    () => {
+      if (roomBackgroundImage.complete && roomBackgroundImage.naturalWidth > 0) settleRoomBackground("ready");
+    },
+  );
+}
 
 const memory = Number(navigator.deviceMemory || 4);
 const cores = Number(navigator.hardwareConcurrency || 4);
