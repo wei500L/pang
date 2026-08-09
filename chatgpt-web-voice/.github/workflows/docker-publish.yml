@@ -41,6 +41,14 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test agent visual audio features
+        run: npm run test:visual
+
   build-and-push:
     name: Build and push
     needs: test

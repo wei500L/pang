@@ -26,17 +26,31 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(staticDir, "app.css"), []byte("/* design system */"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(staticDir, "agent-visual"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staticDir, "agent-visual", "index.js"), []byte("export const ready = true;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(staticDir, "models"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staticDir, "models", "agent-particles.bin"), []byte{1, 2, 3}, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	registerPublicStaticAssets(mux, staticDir)
 	registerStaticRoutes(mux, staticDir)
 
 	for path, wantBody := range map[string]string{
-		"/voice":        "voice page",
-		"/accounts":     "accounts page",
-		"/keys":         "keys page",
-		"/sessions":     "sessions page",
-		"/static/app.css": "/* design system */",
+		"/voice":                             "voice page",
+		"/accounts":                          "accounts page",
+		"/keys":                              "keys page",
+		"/sessions":                          "sessions page",
+		"/static/app.css":                    "/* design system */",
+		"/static/agent-visual/index.js":      "export const ready = true;",
+		"/static/models/agent-particles.bin": string([]byte{1, 2, 3}),
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()
@@ -47,11 +61,11 @@ func TestRegisterStaticRoutesUsesCleanURLs(t *testing.T) {
 	}
 
 	for path, location := range map[string]string{
-		"/":               "/voice",
-		"/voice.html":     "/voice",
-		"/accounts.html":  "/accounts",
-		"/keys.html":      "/keys",
-		"/sessions.html":  "/sessions",
+		"/":              "/voice",
+		"/voice.html":    "/voice",
+		"/accounts.html": "/accounts",
+		"/keys.html":     "/keys",
+		"/sessions.html": "/sessions",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		resp := httptest.NewRecorder()

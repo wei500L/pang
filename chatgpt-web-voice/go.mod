@@ -6,6 +6,7 @@ require (
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
 	github.com/google/uuid v1.6.0
+	github.com/qmuntal/gltf v0.28.0
 )
 
 require (

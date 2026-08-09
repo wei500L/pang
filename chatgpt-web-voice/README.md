@@ -18,6 +18,17 @@
 - 管理端：账号池、下游 API Key、会话元数据、内置语音页
 - 下游 `/v1` 接入：只持 API Key + `voice_session_id` 即可建连 / 恢复
 - 粘性账号与上游续聊线索由网关持久化，不向下游暴露池内账号信息
+- 内置语音页使用由 GLB 表面采样生成的 GPU 粒子 Agent，并复用同一麦克风流实时驱动
+
+### Agent 粒子视觉资产
+
+线上页面加载的是 `static/models/agent-particles.bin`，不会下载或解析高分辨率源 GLB。替换 `assets/agent/source/dl.glb` 后可重新生成固定粒子预算资产：
+
+```bash
+go run ./cmd/prepare-agent-visual
+```
+
+转换器会处理多 Mesh、节点变换、不同拓扑密度、法线、UV、顶点颜色和基础颜色贴图。Draco 或 Meshopt 压缩模型需要先解压。运行时视觉使用自托管 Three.js/WebGL2；不支持 WebGL 时语音和字幕功能仍可正常使用。
 
 ## 网页效果
 

@@ -1,0 +1,9 @@
+{
+  "name": "chatgpt-web-voice-static-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:visual": "node --test frontend-tests/*.test.js"
+  }
+}
+
