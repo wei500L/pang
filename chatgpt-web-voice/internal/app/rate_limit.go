@@ -19,7 +19,9 @@ type publicRateEntry struct {
 }
 
 const (
-	publicConversationWriteLimit = 120
+	// Keep compatibility with already-open voice pages that still emit caption
+	// deltas several times per second. Newly served pages coalesce those writes.
+	publicConversationWriteLimit = 300
 	publicRecordingChunkLimit    = 60
 	maxPublicRateEntries         = 4096
 	rateSweepInterval            = 10 * time.Second
