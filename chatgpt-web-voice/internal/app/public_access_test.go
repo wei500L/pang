@@ -207,3 +207,20 @@ func TestRateLimiterUsesCloudflareIPOnlyWhenTrusted(t *testing.T) {
 		t.Fatalf("untrusted client ip=%q", got)
 	}
 }
+
+func TestRecordingChunksUseIndependentRateLimitBucket(t *testing.T) {
+	limiter := newPublicRateLimiter(config.Config{PublicWriteRate: 1})
+	if allowed, _ := limiter.allow(limiter.writes, "guest-ip", 1); !allowed {
+		t.Fatal("expected first general write to be allowed")
+	}
+	if allowed, _ := limiter.allow(limiter.writes, "guest-ip", 1); allowed {
+		t.Fatal("expected general write bucket to be exhausted")
+	}
+	if allowed, _ := limiter.allow(limiter.recordingChunks, "guest-ip", 60); !allowed {
+		t.Fatal("recording chunks must not consume the general write bucket")
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/recordings/rec_test/chunks/0", nil)
+	if !isRecordingChunkWrite(req) {
+		t.Fatal("recording chunk route was not classified separately")
+	}
+}
