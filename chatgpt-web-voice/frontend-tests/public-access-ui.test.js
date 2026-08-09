@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 const voiceHTML = await readFile(new URL("../static/voice.html", import.meta.url), "utf8");
 const voiceRoomCSS = await readFile(new URL("../static/voice-room.css", import.meta.url), "utf8");
@@ -61,6 +62,124 @@ test("voice page records the microphone through a bounded best-effort upload que
   assert.match(voiceHTML, /startMicrophoneRecording\(\)\.catch/);
   assert.match(voiceHTML, /finishMicrophoneRecording\(updateText \? 'hangup' : 'transport_end'\)/);
   assert.match(voiceHTML, /Recording is strictly best-effort/);
+});
+
+test("streaming conversation persistence is coalesced and isolated from the live path", () => {
+  assert.match(voiceHTML, /CONVERSATION_WRITE_DEBOUNCE_MS = 1500/);
+  assert.match(voiceHTML, /CONVERSATION_WRITE_TIMEOUT_MS = 8000/);
+  assert.match(voiceHTML, /conversationPendingWrites\.set\(/);
+  assert.match(voiceHTML, /priority: 'low'/);
+  assert.match(voiceHTML, /async function flushPendingConversationWrites\(\)/);
+  assert.match(voiceHTML, /requestError\.retryAfterMs/);
+  assert.match(voiceHTML, /flushPendingConversationWrites\(\)\.catch[\s\S]{0,180}setTimeout\(resolve, 1200\)/);
+});
+
+test("streaming updates keep only the latest payload while a write is pending", async () => {
+  const block = voiceHTML.match(/  function scheduleConversationWriteFlush\([^)]*\) \{[\s\S]*?\n  function resetCurrentSessionHistory\(\)/)?.[0]
+    ?.replace(/\n  function resetCurrentSessionHistory\(\)$/, "");
+  assert.ok(block, "conversation persistence block not found");
+  const requests = [];
+  const context = {
+    AbortController,
+    Map,
+    Promise,
+    Array,
+    JSON,
+    String,
+    encodeURIComponent,
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    conversationRequest: async (path, options) => {
+      requests.push({ path, body: JSON.parse(options.body) });
+      return {};
+    },
+    toast: () => {},
+    t: (key) => key,
+    newClientMessageId: () => "generated",
+  };
+  vm.runInNewContext(`
+    var conversationReady = true;
+    var activeSessionId = "cv_test";
+    var conversationWriteChain = Promise.resolve();
+    var conversationWriteTimer = 0;
+    var conversationPendingWrites = new Map();
+    var conversationWriteInFlight = false;
+    var CONVERSATION_WRITE_DEBOUNCE_MS = 1500;
+    var CONVERSATION_WRITE_TIMEOUT_MS = 8000;
+    var conversationSyncErrorShown = false;
+    ${block}
+    globalThis.persistence = {
+      persistConversationMessage,
+      drainPendingConversationWrites,
+      pending: conversationPendingWrites
+    };
+  `, context);
+
+  context.persistence.persistConversationMessage({ clientId: "msg_test", role: "assistant", content: "Hel" });
+  context.persistence.persistConversationMessage({ clientId: "msg_test", role: "assistant", content: "Hello" });
+  assert.equal(context.persistence.pending.size, 1);
+  assert.equal(requests.length, 0);
+  await context.persistence.drainPendingConversationWrites();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].body.content, "Hello");
+  assert.equal(context.persistence.pending.size, 0);
+});
+
+test("transient conversation write failures retain the latest payload for retry", async () => {
+  const block = voiceHTML.match(/  function scheduleConversationWriteFlush\([^)]*\) \{[\s\S]*?\n  function resetCurrentSessionHistory\(\)/)?.[0]
+    ?.replace(/\n  function resetCurrentSessionHistory\(\)$/, "");
+  assert.ok(block, "conversation persistence block not found");
+  let attempts = 0;
+  let toastCount = 0;
+  const context = {
+    AbortController,
+    Map,
+    Promise,
+    Array,
+    JSON,
+    String,
+    encodeURIComponent,
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    conversationRequest: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error("rate limited");
+        error.status = 429;
+        error.retryAfterMs = 30000;
+        throw error;
+      }
+      return {};
+    },
+    toast: () => { toastCount += 1; },
+    t: (key) => key,
+    newClientMessageId: () => "generated",
+  };
+  vm.runInNewContext(`
+    var conversationReady = true;
+    var activeSessionId = "cv_test";
+    var conversationWriteChain = Promise.resolve();
+    var conversationWriteTimer = 0;
+    var conversationPendingWrites = new Map();
+    var conversationWriteInFlight = false;
+    var CONVERSATION_WRITE_DEBOUNCE_MS = 1500;
+    var CONVERSATION_WRITE_TIMEOUT_MS = 8000;
+    var conversationSyncErrorShown = false;
+    ${block}
+    globalThis.persistence = {
+      persistConversationMessage,
+      drainPendingConversationWrites,
+      pending: conversationPendingWrites
+    };
+  `, context);
+
+  context.persistence.persistConversationMessage({ clientId: "msg_retry", role: "user", content: "final text" });
+  await context.persistence.drainPendingConversationWrites();
+  assert.equal(context.persistence.pending.size, 1);
+  assert.equal(toastCount, 0);
+  await context.persistence.drainPendingConversationWrites();
+  assert.equal(context.persistence.pending.size, 0);
+  assert.equal(attempts, 2);
 });
 
 test("admin recording page supports playback, transcript inspection, and deletion", () => {

@@ -2137,6 +2137,11 @@
   var conversationReady = false;
   var conversationReadyPromise = null;
   var conversationWriteChain = Promise.resolve();
+  var conversationWriteTimer = 0;
+  var conversationPendingWrites = new Map();
+  var conversationWriteInFlight = false;
+  var CONVERSATION_WRITE_DEBOUNCE_MS = 1500;
+  var CONVERSATION_WRITE_TIMEOUT_MS = 8000;
   var conversationSyncErrorShown = false;
   var contextMenuSessionId = '';
   var contextMenuReturnFocus = null;
@@ -2191,7 +2196,7 @@
       sessionUntitled: '未命名会话',
       conversationLoading: '正在从 SQLite 加载会话…',
       conversationLoadFailed: '无法读取 SQLite 会话记录',
-      conversationSaveFailed: '会话内容写入 SQLite 失败',
+      conversationSaveFailed: '对话记录保存失败',
       conversationNotReady: '会话数据库尚未准备好',
       conversationMigrated: '浏览器中的旧会话已迁移到 SQLite',
       renameSession: '重命名',
@@ -2367,7 +2372,7 @@
       sessionUntitled: 'Untitled conversation',
       conversationLoading: 'Loading conversations from SQLite…',
       conversationLoadFailed: 'Could not load SQLite conversations',
-      conversationSaveFailed: 'Could not save the conversation to SQLite',
+      conversationSaveFailed: 'Could not save the conversation',
       conversationNotReady: 'The conversation database is not ready',
       conversationMigrated: 'Browser-local conversations were migrated to SQLite',
       renameSession: 'Rename',
@@ -3122,7 +3127,10 @@
     var data = {};
     try { data = await response.json(); } catch (e) {}
     if (!response.ok) {
-      throw new Error((data.detail && data.detail.error) || ('HTTP ' + response.status));
+      var requestError = new Error((data.detail && data.detail.error) || ('HTTP ' + response.status));
+      requestError.status = response.status;
+      requestError.retryAfterMs = Math.max(0, Number(response.headers.get('Retry-After') || 0) * 1000);
+      throw requestError;
     }
     return data;
   }
@@ -3404,7 +3412,7 @@
     if (!session) return;
     closeSessionContextMenu(false);
     try {
-      if (id === activeSessionId) await conversationWriteChain;
+      await flushPendingConversationWrites();
       var data = await conversationRequest('/api/conversations/' + encodeURIComponent(id));
       var text = conversationTXTContent(data.conversation && data.conversation.messages);
       if (!text) {
@@ -3423,7 +3431,7 @@
     if (!session) return;
     closeSessionContextMenu(false);
     try {
-      if (id === activeSessionId) await conversationWriteChain;
+      await flushPendingConversationWrites();
       var data = await conversationRequest('/api/conversations/' + encodeURIComponent(id));
       var conversation = data.conversation || {};
       if (!Array.isArray(conversation.messages)) conversation.messages = [];
@@ -3473,7 +3481,7 @@
       toast(t('sessionDeleteBusy'));
       return;
     }
-    if (id === activeSessionId) await conversationWriteChain;
+    await flushPendingConversationWrites();
     await conversationRequest('/api/conversations/' + encodeURIComponent(id), { method: 'DELETE' });
     var wasActive = id === activeSessionId;
     conversationSessions = conversationSessions.filter(function (item) { return item.id !== id; });
@@ -3532,6 +3540,7 @@
 
   async function createConversationSession() {
     await waitForConversationStore();
+    await flushPendingConversationWrites();
     // New local chat must not reuse the previous chatgpt.com conversation.
     await releaseBackendVoiceSession(false);
     conversationId = '';
@@ -3561,6 +3570,7 @@
     }
     try {
       await waitForConversationStore();
+      await flushPendingConversationWrites();
       await loadConversationDetail(id);
       document.body.classList.remove('sessions-open');
     } catch (error) {
@@ -3610,6 +3620,77 @@
     renderSessionList();
   }
 
+  function scheduleConversationWriteFlush(delayMs) {
+    if (conversationWriteTimer || conversationWriteInFlight || !conversationPendingWrites.size) return;
+    conversationWriteTimer = setTimeout(function () {
+      conversationWriteTimer = 0;
+      drainPendingConversationWrites();
+    }, Math.max(CONVERSATION_WRITE_DEBOUNCE_MS, Number(delayMs) || 0));
+  }
+
+  async function writeConversationMessagePayload(entry) {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timeout = controller ? setTimeout(function () { controller.abort(); }, CONVERSATION_WRITE_TIMEOUT_MS) : 0;
+    try {
+      return await conversationRequest('/api/conversations/' + encodeURIComponent(entry.conversationID) + '/messages', {
+        method: 'POST',
+        keepalive: true,
+        priority: 'low',
+        signal: controller ? controller.signal : undefined,
+        body: JSON.stringify(entry.payload)
+      });
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  function drainPendingConversationWrites() {
+    if (conversationWriteTimer) {
+      clearTimeout(conversationWriteTimer);
+      conversationWriteTimer = 0;
+    }
+    if (conversationWriteInFlight || !conversationPendingWrites.size) return conversationWriteChain;
+    var batch = Array.from(conversationPendingWrites.values());
+    conversationPendingWrites.clear();
+    conversationWriteInFlight = true;
+    var retryDelayMs = 0;
+    conversationWriteChain = (async function () {
+      var failed = false;
+      for (var index = 0; index < batch.length; index++) {
+        var entry = batch[index];
+        try {
+          await writeConversationMessagePayload(entry);
+        } catch (error) {
+          failed = true;
+          var status = Number(error && error.status || 0);
+          var retryable = !status || status === 408 || status === 429 || status >= 500;
+          if (retryable && Number(entry.attempts || 0) < 3 && !conversationPendingWrites.has(entry.key)) {
+            entry.attempts = Number(entry.attempts || 0) + 1;
+            conversationPendingWrites.set(entry.key, entry);
+            retryDelayMs = Math.max(retryDelayMs, Number(error && error.retryAfterMs || 0), 2500);
+          } else if (!conversationSyncErrorShown) {
+            conversationSyncErrorShown = true;
+            toast(t('conversationSaveFailed') + ': ' + String(error && error.message || error));
+          }
+        }
+      }
+      if (!failed) conversationSyncErrorShown = false;
+    })().finally(function () {
+      conversationWriteInFlight = false;
+      scheduleConversationWriteFlush(retryDelayMs);
+    });
+    return conversationWriteChain;
+  }
+
+  async function flushPendingConversationWrites() {
+    if (conversationWriteTimer) {
+      clearTimeout(conversationWriteTimer);
+      conversationWriteTimer = 0;
+    }
+    if (conversationWriteInFlight) await conversationWriteChain.catch(function () {});
+    if (conversationPendingWrites.size) await drainPendingConversationWrites().catch(function () {});
+  }
+
   function persistConversationMessage(message) {
     if (!conversationReady || !activeSessionId || !message) return Promise.resolve();
     var conversationID = activeSessionId;
@@ -3619,20 +3700,17 @@
       content: message.content
     };
     message.clientId = payload.client_id;
-    conversationWriteChain = conversationWriteChain.catch(function () {}).then(function () {
-      return conversationRequest('/api/conversations/' + encodeURIComponent(conversationID) + '/messages', {
-        method: 'POST',
-        keepalive: true,
-        body: JSON.stringify(payload)
-      });
-    }).then(function () {
-      conversationSyncErrorShown = false;
-    }).catch(function (error) {
-      if (!conversationSyncErrorShown) {
-        conversationSyncErrorShown = true;
-        toast(t('conversationSaveFailed') + ': ' + error.message);
-      }
+    // Streaming captions update the same client_id several times per second.
+    // Keep only the newest payload and flush on a fixed cadence so network and
+    // SQLite work stay bounded even if a write stalls.
+    var writeKey = conversationID + '\n' + payload.client_id;
+    conversationPendingWrites.set(writeKey, {
+      key: writeKey,
+      conversationID: conversationID,
+      payload: payload,
+      attempts: 0
     });
+    scheduleConversationWriteFlush();
     return conversationWriteChain;
   }
 
@@ -4748,6 +4826,7 @@
   // cleanup remains the final safety net.
   function releaseOnPageExit() {
     finishMicrophoneRecording('page_exit');
+    flushPendingConversationWrites().catch(function () {});
     if (!(inCall || starting) || !voiceSessionId) return;
     try {
       fetch('/api/voice/session/release', {
@@ -5088,7 +5167,7 @@
     try {
       await state.uploadChain.catch(function () {});
       await Promise.race([
-        conversationWriteChain.catch(function () {}),
+        flushPendingConversationWrites().catch(function () {}),
         new Promise(function (resolve) { setTimeout(resolve, 2500); })
       ]);
       var completeBody = JSON.stringify({
@@ -5579,6 +5658,12 @@
         remoteAudio.muted = false;
         remoteAudio.volume = Math.min(1, Math.max(0, playbackVolume));
       }
+      // Force the final coalesced caption after the data channel closes, but
+      // never let a degraded persistence path delay hangup for long.
+      await Promise.race([
+        flushPendingConversationWrites().catch(function () {}),
+        new Promise(function (resolve) { setTimeout(resolve, 1200); })
+      ]);
       // Keep ending UI while post-hangup network work runs (title + release).
       updateCallControls();
       // Persist sticky ids, then pull upstream title once if not user-locked.

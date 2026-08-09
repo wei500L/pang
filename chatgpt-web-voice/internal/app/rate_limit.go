@@ -18,15 +18,31 @@ type publicRateEntry struct {
 	windowStart time.Time
 }
 
+const (
+	// Keep compatibility with already-open voice pages that still emit caption
+	// deltas several times per second. Newly served pages coalesce those writes.
+	publicConversationWriteLimit = 300
+	publicRecordingChunkLimit    = 60
+	maxPublicRateEntries         = 4096
+	rateSweepInterval            = 10 * time.Second
+	rateEntryMaxAge              = 2 * time.Minute
+)
+
+type publicRateBucket struct {
+	entries   map[string]publicRateEntry
+	lastSweep time.Time
+}
+
 type publicRateLimiter struct {
-	mu              sync.Mutex
-	sessions        map[string]publicRateEntry
-	writes          map[string]publicRateEntry
-	recordingChunks map[string]publicRateEntry
-	sessionLimit    int
-	writeLimit      int
-	trustCloudflare bool
-	now             func() time.Time
+	mu                 sync.Mutex
+	sessions           *publicRateBucket
+	writes             *publicRateBucket
+	conversationWrites *publicRateBucket
+	recordingChunks    *publicRateBucket
+	sessionLimit       int
+	writeLimit         int
+	trustCloudflare    bool
+	now                func() time.Time
 }
 
 func newPublicRateLimiter(cfg config.Config) *publicRateLimiter {
@@ -39,14 +55,19 @@ func newPublicRateLimiter(cfg config.Config) *publicRateLimiter {
 		writeLimit = 60
 	}
 	return &publicRateLimiter{
-		sessions:        make(map[string]publicRateEntry),
-		writes:          make(map[string]publicRateEntry),
-		recordingChunks: make(map[string]publicRateEntry),
-		sessionLimit:    sessionLimit,
-		writeLimit:      writeLimit,
-		trustCloudflare: cfg.TrustCloudflareIP,
-		now:             time.Now,
+		sessions:           newPublicRateBucket(),
+		writes:             newPublicRateBucket(),
+		conversationWrites: newPublicRateBucket(),
+		recordingChunks:    newPublicRateBucket(),
+		sessionLimit:       sessionLimit,
+		writeLimit:         writeLimit,
+		trustCloudflare:    cfg.TrustCloudflareIP,
+		now:                time.Now,
 	}
+}
+
+func newPublicRateBucket() *publicRateBucket {
+	return &publicRateBucket{entries: make(map[string]publicRateEntry)}
 }
 
 func (l *publicRateLimiter) Wrap(next http.Handler) http.Handler {
@@ -58,9 +79,13 @@ func (l *publicRateLimiter) Wrap(next http.Handler) http.Handler {
 		key := l.clientIP(r)
 		entries, limit := l.writes, l.writeLimit
 		if isRecordingChunkWrite(r) {
-			// Periodic audio chunks must not consume the quota used by chat and
-			// conversation persistence. Keep a separate bounded bucket instead.
-			entries, limit = l.recordingChunks, 60
+			// Periodic audio chunks must not consume the quota used by call
+			// control and recording lifecycle requests.
+			entries, limit = l.recordingChunks, publicRecordingChunkLimit
+		} else if isConversationWrite(r) {
+			// Streaming caption persistence is isolated from call release/context
+			// and recording completion, so it cannot starve the live call path.
+			entries, limit = l.conversationWrites, publicConversationWriteLimit
 		} else if isHighCostPublicWrite(r) {
 			entries, limit = l.sessions, l.sessionLimit
 		}
@@ -84,23 +109,33 @@ func isRecordingChunkWrite(r *http.Request) bool {
 		strings.Contains(r.URL.Path, "/chunks/")
 }
 
-func (l *publicRateLimiter) allow(entries map[string]publicRateEntry, key string, limit int) (bool, int) {
+func isConversationWrite(r *http.Request) bool {
+	return r.URL.Path == "/api/conversations" || strings.HasPrefix(r.URL.Path, "/api/conversations/")
+}
+
+func (l *publicRateLimiter) allow(bucket *publicRateBucket, key string, limit int) (bool, int) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(entries) > 4096 {
-		for entryKey, candidate := range entries {
-			if now.Sub(candidate.windowStart) >= 2*time.Minute {
-				delete(entries, entryKey)
+	entry, exists := bucket.entries[key]
+	if !exists && len(bucket.entries) >= maxPublicRateEntries {
+		if bucket.lastSweep.IsZero() || now.Sub(bucket.lastSweep) >= rateSweepInterval {
+			for entryKey, candidate := range bucket.entries {
+				if now.Sub(candidate.windowStart) >= rateEntryMaxAge {
+					delete(bucket.entries, entryKey)
+				}
 			}
+			bucket.lastSweep = now
+		}
+		if len(bucket.entries) >= maxPublicRateEntries {
+			return false, int(time.Minute / time.Second)
 		}
 	}
-	entry := entries[key]
 	if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= time.Minute {
 		entry = publicRateEntry{windowStart: now}
 	}
 	entry.count++
-	entries[key] = entry
+	bucket.entries[key] = entry
 	if entry.count <= limit {
 		return true, 0
 	}
