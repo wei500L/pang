@@ -2,7 +2,7 @@ import * as THREE from "/static/vendor/three/three.module.min.js";
 import { AudioFeatureExtractor } from "./audio-features.js";
 
 const MANIFEST_URL = "/static/models/agent-particles.json";
-const PULSE_COUNT = 4;
+const PULSE_COUNT = 6;
 const QUALITY_COUNTS = [65536, 36864, 16384];
 
 const vertexShader = /* glsl */ `
@@ -18,7 +18,9 @@ const vertexShader = /* glsl */ `
   uniform float uLow;
   uniform float uMid;
   uniform float uHigh;
+  uniform float uFlux;
   uniform float uSpeech;
+  uniform float uPresence;
   uniform float uStateEnergy;
   uniform float uMotionScale;
   uniform float uLayer;
@@ -38,18 +40,29 @@ const vertexShader = /* glsl */ `
     return normalize(normal);
   }
 
-  float pulseField(vec3 basePosition) {
-    float field = 0.0;
+  vec3 pulseField(vec3 basePosition, float phase) {
+    float crestField = 0.0;
+    float wakeField = 0.0;
+    float impactField = 0.0;
     for (int i = 0; i < ${PULSE_COUNT}; i += 1) {
       float age = uTime - uPulses[i].w;
-      float valid = step(0.0, age) * step(age, 3.2);
-      float distanceToAnchor = distance(basePosition, uPulses[i].xyz);
-      float front = age * (0.58 + uLow * 0.22);
-      float width = 0.10 + uMid * 0.08;
-      float ring = exp(-pow((distanceToAnchor - front) / width, 2.0));
-      field += ring * exp(-age * 0.72) * uPulseAmplitudes[i] * valid;
+      float valid = step(0.0, age) * step(age, 3.6);
+      float amplitude = uPulseAmplitudes[i];
+      float spatialWarp = sin(dot(basePosition, vec3(5.3, 3.7, 7.1)) + phase * 0.24 + float(i) * 1.73);
+      float distanceToAnchor = distance(basePosition, uPulses[i].xyz) + spatialWarp * (0.018 + uMid * 0.012);
+      float front = age * (0.52 + uLow * 0.18 + amplitude * 0.08);
+      float width = 0.055 + uMid * 0.055 + age * 0.012;
+      float crest = exp(-pow((distanceToAnchor - front) / width, 2.0));
+      float wakeCenter = max(0.0, front - 0.16 - age * 0.035);
+      float wakeWidth = 0.17 + age * 0.055;
+      float wake = exp(-pow((distanceToAnchor - wakeCenter) / wakeWidth, 2.0));
+      float impact = exp(-distanceToAnchor * distanceToAnchor * 34.0) * exp(-age * 4.6);
+      float decay = exp(-age * 0.68) * amplitude * valid;
+      crestField += crest * decay;
+      wakeField += wake * decay * 0.42;
+      impactField += impact * amplitude * valid;
     }
-    return clamp(field, 0.0, 1.35);
+    return clamp(vec3(crestField, wakeField, impactField), 0.0, 1.45);
   }
 
   void main() {
@@ -67,15 +80,25 @@ const vertexShader = /* glsl */ `
     vec3 idleOffset = normal * (breath - 0.5) * 0.010;
     idleOffset += tangent * slowFlow * 0.0045 + bitangent * cos(uTime * 0.38 + phase) * 0.0035;
 
-    float pulse = pulseField(basePosition);
-    float broadWave = sin(basePosition.y * 7.0 - uTime * (1.4 + uLow) + phase * 0.18);
-    float fineWave = sin(dot(basePosition, vec3(13.0, 9.0, 6.0)) - uTime * 4.2 + secondary);
-    vec3 voiceOffset = normal * (uLow * 0.020 * broadWave + uMid * 0.065 * pulse);
-    voiceOffset += tangent * uMid * 0.022 * pulse * slowFlow;
-    voiceOffset += bitangent * uHigh * 0.012 * fineWave;
+    vec3 pulseFields = pulseField(basePosition, phase);
+    float pulseCrest = pulseFields.x;
+    float pulseWake = pulseFields.y;
+    float localImpact = pulseFields.z;
+    float pulse = clamp(pulseCrest + pulseWake * 0.72 + localImpact * 0.85, 0.0, 1.5);
+    float broadWave = sin(basePosition.y * 8.5 + basePosition.x * 2.6 - uTime * (1.25 + uLow * 1.35));
+    float surfaceFlow = sin(dot(basePosition, vec3(6.4, 4.8, 3.1)) - uTime * (1.5 + uMid * 1.8) + phase * 0.12);
+    float fineWave = sin(dot(basePosition, vec3(15.0, 10.5, 7.0)) - uTime * 5.4 + secondary);
+    float pressure = uLow * (0.008 + uEnergy * 0.020) * broadWave;
+    float propagated = uMid * (pulseCrest * 0.072 + pulseWake * 0.032 + localImpact * 0.045);
+    float residualMotion = uPresence * 0.0045 * sin(dot(basePosition, vec3(4.1, 6.0, 3.4)) - uTime * 1.15);
+    vec3 voiceOffset = normal * (pressure + propagated + residualMotion);
+    voiceOffset += tangent * uMid * (0.009 + pulse * 0.020) * surfaceFlow;
+    voiceOffset += bitangent * (uHigh * 0.008 + uFlux * 0.018 * pulse) * fineWave;
 
-    float detachMask = step(0.94, particleSeed.x) * smoothstep(0.24, 0.72, uEnergy + uAttack * 0.45);
-    float detachEnvelope = detachMask * uSpeech * (uEnergy * 0.072 + uAttack * 0.052 + pulse * 0.035);
+    float detachThreshold = mix(0.978, 0.935, clamp(uEnergy * 0.7 + uFlux * 0.65, 0.0, 1.0));
+    float detachMask = step(detachThreshold, particleSeed.x) * smoothstep(0.20, 0.76, uEnergy + uAttack * 0.38 + uFlux * 0.42);
+    float detachEnvelope = detachMask * uSpeech * (uEnergy * 0.052 + uAttack * 0.040 + uFlux * 0.032 + pulse * 0.040);
+    detachEnvelope *= 0.72 + 0.28 * sin(uTime * 2.2 + secondary);
     vec3 detachDirection = normalize(normal * 0.78 + tangent * sin(secondary) * 0.32 + bitangent * cos(phase) * 0.22);
     vec3 detachOffset = detachDirection * detachEnvelope;
 
@@ -85,18 +108,28 @@ const vertexShader = /* glsl */ `
     gl_Position = projectionMatrix * viewPosition;
 
     float perspective = clamp(2.5 / max(0.5, -viewPosition.z), 0.55, 2.25);
-    float energySize = 1.0 + uEnergy * 0.34 + uAttack * 0.28 + pulse * 0.22;
+    float localEnergy = clamp(uEnergy * 0.20 + pulseCrest * 0.62 + pulseWake * 0.22 + localImpact * 0.72 + uFlux * (0.08 + pulse * 0.30), 0.0, 1.45);
+    float energySize = 1.0 + localEnergy * 0.48 + uAttack * localImpact * 0.32;
     float haloSize = mix(1.0, 2.45 + detachMask * 1.25, uLayer);
-    gl_PointSize = clamp(uPointSize * uPixelRatio * perspective * energySize * haloSize, 1.0, 14.0);
+    float particleScale = mix(0.84, 1.12, particleSeed.y);
+    gl_PointSize = clamp(uPointSize * uPixelRatio * perspective * energySize * haloSize * particleScale, 1.0, 14.0);
 
     vec3 sourceColor = pow(max(particleColor.rgb, vec3(0.0)), vec3(2.2));
+    float sourceLuma = dot(sourceColor, vec3(0.2126, 0.7152, 0.0722));
+    sourceColor = mix(vec3(sourceLuma), sourceColor, 1.20);
+    sourceColor = max((sourceColor - vec3(0.085)) * 1.24 + vec3(0.085), vec3(0.0)) * 1.12;
+    float sculpturalLight = 0.76 + max(dot(normal, normalize(vec3(-0.32, 0.48, 0.82))), 0.0) * 0.38;
+    sourceColor *= sculpturalLight;
     vec3 warmEnergy = vec3(1.0, 0.78, 0.52);
-    float colorLift = clamp(uEnergy * 0.22 + pulse * 0.38 + uAttack * 0.16 + uStateEnergy * 0.12, 0.0, 0.62);
-    vColor = mix(sourceColor, warmEnergy, colorLift);
-    vEnergy = clamp(uEnergy + pulse * 0.7 + uAttack * 0.25, 0.0, 1.35);
-    vHalo = max(detachMask * (0.25 + uEnergy), pulse * 0.42 + uAttack * 0.16);
+    vec3 paleEnergy = vec3(1.0, 0.93, 0.82);
+    vec3 energyColor = mix(warmEnergy, paleEnergy, clamp(uHigh * 0.36 + uFlux * 0.58, 0.0, 0.82));
+    float colorLift = clamp(uEnergy * 0.10 + localEnergy * 0.46 + uAttack * localImpact * 0.22 + uStateEnergy * 0.10, 0.0, 0.68);
+    vColor = mix(sourceColor, energyColor, colorLift);
+    vEnergy = clamp(uEnergy * 0.36 + localEnergy * 0.88 + uPresence * 0.10, 0.0, 1.45);
+    vHalo = max(detachMask * (0.22 + uEnergy + uFlux * 0.4), pulseCrest * 0.54 + pulseWake * 0.18 + localImpact * 0.78 + uFlux * pulse * 0.26);
     float sourceAlpha = max(0.1, particleColor.a);
-    vAlpha = sourceAlpha * mix(0.72 + uStateEnergy * 0.08, 0.16 + vHalo * 0.44, uLayer);
+    float densityVariation = mix(0.82, 1.0, particleSeed.x);
+    vAlpha = sourceAlpha * densityVariation * mix(0.80 + uStateEnergy * 0.07, 0.13 + vHalo * 0.46, uLayer);
   }
 `;
 
@@ -112,14 +145,16 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec2 centered = gl_PointCoord - vec2(0.5);
     float distanceFromCenter = length(centered);
-    float core = smoothstep(0.5, 0.10, distanceFromCenter);
-    float glow = exp(-distanceFromCenter * distanceFromCenter * 11.0);
+    float core = smoothstep(0.48, 0.23, distanceFromCenter);
+    float hotCore = exp(-distanceFromCenter * distanceFromCenter * 34.0);
+    float energizedRim = smoothstep(0.48, 0.34, distanceFromCenter) - smoothstep(0.32, 0.20, distanceFromCenter);
+    float glow = exp(-distanceFromCenter * distanceFromCenter * 13.5);
     if (uLayer > 0.5 && vHalo < 0.045) discard;
-    float shape = mix(core, glow, uLayer);
+    float shape = mix(core * 0.74 + hotCore * 0.46 + energizedRim * vEnergy * 0.18, glow, uLayer);
     float themeAlpha = mix(1.0, 1.12, uLightTheme);
     float alpha = shape * vAlpha * themeAlpha;
     if (alpha < 0.012) discard;
-    vec3 color = vColor * (1.0 + vEnergy * mix(0.42, 0.72, uLayer));
+    vec3 color = vColor * (1.12 + vEnergy * mix(0.46, 0.78, uLayer));
     color *= mix(1.0, 0.74, uLightTheme);
     gl_FragColor = vec4(color, alpha);
     #include <tonemapping_fragment>
@@ -160,8 +195,9 @@ class AgentVisual {
     this.qualityIndex = this.initialQualityIndex();
     this.pulseCursor = 0;
     this.anchorCursor = 0;
+    this.lastPulseAt = -Infinity;
     this.pulses = Array.from({ length: PULSE_COUNT }, () => ({ anchor: new THREE.Vector3(), startedAt: -100, amplitude: 0 }));
-    this.springs = Object.fromEntries(["energy", "attack", "low", "mid", "high", "speech", "state"].map((key) => [key, new SpringValue()]));
+    this.springs = Object.fromEntries(["energy", "attack", "low", "mid", "high", "flux", "speech", "presence", "state"].map((key) => [key, new SpringValue()]));
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.motionScale = this.reducedMotion.matches ? 0.38 : 1;
     this.onVisibility = () => {
@@ -214,7 +250,7 @@ class AgentVisual {
   buildScene(buffer) {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 20);
-    this.camera.position.set(0, 0.02, 3.55);
+    this.camera.position.set(0, 0.015, 4.54);
     this.group = new THREE.Group();
     this.group.rotation.set(-0.035, -0.08, 0);
     this.scene.add(this.group);
@@ -223,7 +259,7 @@ class AgentVisual {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.32;
     this.container.appendChild(this.renderer.domElement);
 
     const count = this.manifest.count;
@@ -240,13 +276,15 @@ class AgentVisual {
     const sharedUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: 1 },
-      uPointSize: { value: 2.15 },
+      uPointSize: { value: 1.58 },
       uEnergy: { value: 0 },
       uAttack: { value: 0 },
       uLow: { value: 0 },
       uMid: { value: 0 },
       uHigh: { value: 0 },
+      uFlux: { value: 0 },
       uSpeech: { value: 0 },
+      uPresence: { value: 0 },
       uStateEnergy: { value: 0 },
       uMotionScale: { value: this.motionScale },
       uLightTheme: { value: 0 },
@@ -298,7 +336,7 @@ class AgentVisual {
   updateTheme() {
     const light = document.documentElement.getAttribute("data-theme") === "light";
     if (this.sharedUniforms) this.sharedUniforms.uLightTheme.value = light ? 1 : 0;
-    if (this.renderer) this.renderer.toneMappingExposure = light ? 0.94 : 1.18;
+    if (this.renderer) this.renderer.toneMappingExposure = light ? 1.02 : 1.32;
   }
 
   resize() {
@@ -311,7 +349,9 @@ class AgentVisual {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
-    this.camera.position.z = mobile ? 4.05 : Math.max(3.35, 3.7 - Math.min(0.35, width / Math.max(height, 1) * 0.12));
+    this.camera.position.z = mobile
+      ? 4.90
+      : Math.max(4.30, 4.66 - Math.min(0.24, width / Math.max(height, 1) * 0.07));
     this.camera.updateProjectionMatrix();
     if (this.sharedUniforms) this.sharedUniforms.uPixelRatio.value = dpr;
   }
@@ -331,13 +371,26 @@ class AgentVisual {
 
   processMicFrame(timeData, frequencyData, sampleRate, timestamp) {
     const features = this.extractor.process(timeData, frequencyData, sampleRate, timestamp);
+    const now = Number.isFinite(Number(timestamp)) ? Number(timestamp) : performance.now();
     this.springs.energy.target = features.energy;
     this.springs.attack.target = features.attack;
     this.springs.low.target = features.low;
     this.springs.mid.target = features.mid;
     this.springs.high.target = features.high;
+    this.springs.flux.target = features.spectralFlux;
     this.springs.speech.target = features.speechActive ? 1 : 0;
-    if (features.onset) this.triggerPulse(Math.max(0.28, features.attack, features.energy * 0.82));
+    this.springs.presence.target = features.speechActive
+      ? Math.min(1, 0.22 + features.energy * 0.72 + features.spectralFlux * 0.28)
+      : 0;
+
+    const transient = Math.max(features.attack, features.spectralFlux * 1.15);
+    if (features.onset) {
+      this.triggerPulse(Math.max(0.34, transient, features.energy * 0.86));
+      this.lastPulseAt = now;
+    } else if (features.speechActive && features.spectralFlux > 0.16 && now - this.lastPulseAt > 210) {
+      this.triggerPulse(Math.max(0.22, features.spectralFlux * 0.88, features.attack * 0.72));
+      this.lastPulseAt = now;
+    }
     return features;
   }
 
@@ -354,7 +407,7 @@ class AgentVisual {
 
   resetAudio() {
     this.extractor.reset();
-    for (const key of ["energy", "attack", "low", "mid", "high", "speech"]) this.springs[key].target = 0;
+    for (const key of ["energy", "attack", "low", "mid", "high", "flux", "speech", "presence"]) this.springs[key].target = 0;
   }
 
   schedule() {
@@ -370,8 +423,22 @@ class AgentVisual {
     if (!this.renderer || !this.scene || !this.camera) return;
     const dt = Math.min(0.05, Math.max(1 / 240, (timestamp - this.lastFrame) / 1000 || 1 / 60));
     this.lastFrame = timestamp;
+    const springProfiles = {
+      energy: [70, 17],
+      attack: [128, 22],
+      low: [58, 15],
+      mid: [78, 17],
+      high: [104, 20],
+      flux: [136, 23],
+      speech: [44, 14],
+      presence: [30, 11],
+      state: [48, 14],
+    };
     const values = {};
-    for (const [key, spring] of Object.entries(this.springs)) values[key] = spring.step(dt);
+    for (const [key, spring] of Object.entries(this.springs)) {
+      const [stiffness, damping] = springProfiles[key] || [56, 14];
+      values[key] = spring.step(dt, stiffness, damping);
+    }
     const time = timestamp / 1000;
     this.sharedUniforms.uTime.value = time;
     this.sharedUniforms.uEnergy.value = Math.max(0, values.energy);
@@ -379,7 +446,9 @@ class AgentVisual {
     this.sharedUniforms.uLow.value = Math.max(0, values.low);
     this.sharedUniforms.uMid.value = Math.max(0, values.mid);
     this.sharedUniforms.uHigh.value = Math.max(0, values.high);
+    this.sharedUniforms.uFlux.value = Math.max(0, values.flux);
     this.sharedUniforms.uSpeech.value = Math.max(0, values.speech);
+    this.sharedUniforms.uPresence.value = Math.max(0, values.presence);
     this.sharedUniforms.uStateEnergy.value = Math.max(0, values.state);
     for (let i = 0; i < PULSE_COUNT; i += 1) {
       const pulse = this.pulses[i];

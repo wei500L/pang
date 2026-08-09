@@ -1483,9 +1483,276 @@
       body.app-shell .agent-visual-layer.is-ready.has-transcript canvas { opacity: .48; }
       body.app-shell .agent-visual-layer.is-ready + .chat-stage .welcome-state { padding-bottom: 42px; }
     }
+
+    /* Cinematic voice room — a quieter hierarchy built around presence. */
+    :root,
+    html[data-theme="dark"] {
+      --app-bg: #080906;
+      --panel-bg: #0d0f0c;
+      --panel-raised: #131612;
+      --panel-soft: #171a16;
+      --sidebar-bg: rgba(15, 17, 14, .92);
+      --settings-bg: rgba(15, 17, 14, .96);
+      --control-bg: rgba(255, 255, 255, .055);
+      --control-active: rgba(255, 255, 255, .10);
+      --meter-track: rgba(255, 255, 255, .08);
+      --app-line: rgba(243, 240, 232, .075);
+      --app-line-strong: rgba(243, 240, 232, .14);
+      --app-ink: #f3f0e8;
+      --app-muted: #aaa9a1;
+      --app-dim: #6f716b;
+      --app-green: #5bbd98;
+      --app-green-bright: #83d8b6;
+      --app-red: #f08373;
+      --app-warm: #d78469;
+      --app-warm-soft: rgba(215, 132, 105, .13);
+      --header-bg: rgba(8, 9, 6, .62);
+      --composer-bg: rgba(19, 22, 18, .82);
+      --composer-shadow: 0 24px 70px rgba(0, 0, 0, .36), inset 0 1px rgba(255, 255, 255, .04);
+      --settings-shadow: -28px 0 90px rgba(0, 0, 0, .45);
+      --sidebar-shadow: 18px 0 60px rgba(0, 0, 0, .42);
+      --agent-scrim-top: rgba(8, 9, 6, .18);
+      --agent-scrim-bottom: rgba(8, 9, 6, .94);
+      --agent-message-bg: rgba(20, 22, 18, .76);
+      --agent-message-border: rgba(243, 240, 232, .09);
+      --bubble-user-bg: #e9e5da;
+      --bubble-user-ink: #141612;
+    }
+    html[data-theme="light"] {
+      --app-bg: #ebeae4;
+      --panel-bg: #f7f6f1;
+      --panel-raised: #fffef9;
+      --panel-soft: #efeee8;
+      --sidebar-bg: rgba(247, 246, 241, .9);
+      --settings-bg: rgba(250, 249, 244, .97);
+      --control-bg: rgba(23, 25, 21, .045);
+      --control-active: #ffffff;
+      --meter-track: rgba(23, 25, 21, .08);
+      --app-line: rgba(23, 25, 21, .075);
+      --app-line-strong: rgba(23, 25, 21, .14);
+      --app-ink: #171915;
+      --app-muted: #686b64;
+      --app-dim: #979991;
+      --app-green: #248e6a;
+      --app-green-bright: #137757;
+      --app-red: #c54e43;
+      --app-warm: #b65f4b;
+      --app-warm-soft: rgba(182, 95, 75, .10);
+      --header-bg: rgba(247, 246, 241, .72);
+      --composer-bg: rgba(255, 254, 249, .86);
+      --composer-shadow: 0 24px 70px rgba(42, 45, 38, .10), inset 0 1px rgba(255, 255, 255, .8);
+      --agent-scrim-top: rgba(247, 246, 241, .04);
+      --agent-scrim-bottom: rgba(247, 246, 241, .93);
+      --agent-message-bg: rgba(255, 254, 249, .8);
+      --agent-message-border: rgba(23, 25, 21, .08);
+      --bubble-user-bg: #20231e;
+      --bubble-user-ink: #fffef9;
+    }
+    body.app-shell {
+      background:
+        radial-gradient(1050px 640px at 70% -16%, rgba(215, 132, 105, .12), transparent 62%),
+        radial-gradient(700px 560px at 8% 104%, rgba(91, 189, 152, .08), transparent 64%),
+        var(--app-bg);
+      letter-spacing: -.015em;
+    }
+    body.app-shell .workspace {
+      grid-template-columns: 272px minmax(0, 1fr);
+      gap: 12px;
+      padding: 12px;
+      background: transparent;
+    }
+    body.app-shell .session-sidebar {
+      padding: 18px 14px 14px;
+      border: 1px solid var(--app-line);
+      border-radius: 24px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, .035), transparent 38%),
+        var(--sidebar-bg);
+      box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+      backdrop-filter: blur(28px) saturate(1.12);
+      -webkit-backdrop-filter: blur(28px) saturate(1.12);
+    }
+    body.app-shell .sidebar-top { min-height: 46px; padding: 0 4px; }
+    body.app-shell .brand { gap: 12px; }
+    body.app-shell .brand-mark {
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 13px;
+      background: linear-gradient(145deg, #7cd5b1, #399b77 58%, #1f694f);
+      box-shadow: 0 10px 32px rgba(57, 155, 119, .23), inset 0 1px rgba(255, 255, 255, .28);
+      font-size: 13px;
+    }
+    body.app-shell .brand-title { font-size: 14px; font-weight: 650; letter-spacing: -.025em; }
+    body.app-shell .brand-sub {
+      margin-top: 5px;
+      color: var(--app-dim);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    body.app-shell .new-session {
+      min-height: 46px;
+      margin: 22px 0 24px;
+      padding: 11px 14px;
+      border-color: var(--app-line-strong);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .018));
+      box-shadow: inset 0 1px rgba(255, 255, 255, .035);
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+    body.app-shell .new-session:hover { transform: translateY(-1px); border-color: rgba(91, 189, 152, .34); background: rgba(91, 189, 152, .08); }
+    body.app-shell .new-session-icon { width: 22px; color: var(--app-green-bright); font-weight: 300; }
+    body.app-shell .sidebar-label { padding: 0 10px 10px; font-size: 9px; letter-spacing: .16em; }
+    body.app-shell .session-item { margin: 3px 0; padding: 12px; border-radius: 13px; }
+    body.app-shell .session-item.active { background: rgba(255, 255, 255, .055); box-shadow: inset 2px 0 var(--app-green); }
+    body.app-shell .sidebar-footer { padding: 14px 10px 4px; }
+    body.app-shell .privacy-status { display: flex; align-items: center; gap: 8px; color: var(--app-muted); font-size: 10px; font-weight: 650; letter-spacing: .02em; }
+    body.app-shell .privacy-status > span:first-child { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--app-green); box-shadow: 0 0 0 4px rgba(91, 189, 152, .11); }
+    body.app-shell .footer-note { margin: 8px 0 0; line-height: 1.5; }
+    body.app-shell .conversation-shell {
+      height: calc(100dvh - 24px);
+      border: 1px solid var(--app-line);
+      border-radius: 28px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, .025), transparent 24%),
+        var(--panel-bg);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .035);
+    }
+    body.app-shell .conversation-header {
+      min-height: 76px;
+      padding: 15px 22px;
+      border-bottom-color: var(--app-line);
+      background: var(--header-bg);
+      backdrop-filter: blur(24px) saturate(1.2);
+      -webkit-backdrop-filter: blur(24px) saturate(1.2);
+    }
+    body.app-shell .header-left { gap: 14px; }
+    body.app-shell .header-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; color: var(--app-dim); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8px; font-weight: 600; letter-spacing: .14em; }
+    body.app-shell .session-title { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
+    body.app-shell .session-status { margin-top: 5px; font-size: 10.5px; }
+    body.app-shell .orb { width: 7px; height: 7px; }
+    body.app-shell .header-actions { gap: 8px; }
+    body.app-shell .header-chip,
+    body.app-shell .conversation-header .icon-button {
+      min-height: 34px;
+      border: 1px solid var(--app-line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .025);
+      backdrop-filter: blur(12px);
+    }
+    body.app-shell .conversation-header .icon-button { width: 34px; height: 34px; font-size: 15px; }
+    body.app-shell .agent-visual-layer {
+      background:
+        radial-gradient(48% 64% at 50% 44%, rgba(215, 132, 105, .15), transparent 72%),
+        radial-gradient(35% 46% at 50% 48%, rgba(240, 190, 147, .055), transparent 76%),
+        linear-gradient(180deg, transparent 58%, rgba(91, 189, 152, .035));
+    }
+    body.app-shell .agent-visual-layer::before {
+      content: "";
+      position: absolute;
+      width: min(52vw, 680px);
+      aspect-ratio: 1;
+      left: 50%;
+      top: 45%;
+      border: 1px solid rgba(215, 132, 105, .08);
+      border-radius: 50%;
+      transform: translate(-50%, -50%) scale(.82);
+      box-shadow: 0 0 0 44px rgba(215, 132, 105, .018), 0 0 0 100px rgba(215, 132, 105, .012);
+      opacity: .7;
+      transition: opacity .5s ease, transform .8s cubic-bezier(.22, 1, .36, 1), border-color .5s ease;
+    }
+    body.app-shell[data-voice-state="listening"] .agent-visual-layer::before { opacity: 1; transform: translate(-50%, -50%) scale(.9); border-color: rgba(91, 189, 152, .24); animation: room-listen 2.4s ease-in-out infinite; }
+    body.app-shell[data-voice-state="speaking"] .agent-visual-layer::before { opacity: 1; transform: translate(-50%, -50%) scale(1); border-color: rgba(215, 132, 105, .28); animation: room-speak 1.15s ease-in-out infinite; }
+    @keyframes room-listen { 50% { box-shadow: 0 0 0 58px rgba(91, 189, 152, .025), 0 0 0 122px rgba(91, 189, 152, .012); } }
+    @keyframes room-speak { 50% { box-shadow: 0 0 0 68px rgba(215, 132, 105, .028), 0 0 0 140px rgba(215, 132, 105, .012); } }
+    body.app-shell .agent-visual-layer::after {
+      background:
+        linear-gradient(to bottom, var(--agent-scrim-top) 0%, transparent 25%, transparent 54%, var(--agent-scrim-bottom) 100%),
+        radial-gradient(ellipse at 50% 45%, transparent 29%, color-mix(in srgb, var(--app-bg) 42%, transparent) 76%, color-mix(in srgb, var(--app-bg) 84%, transparent) 100%);
+    }
+    body.app-shell .agent-visual-layer.is-ready canvas { opacity: .94; filter: saturate(1.12) contrast(1.11) brightness(1.04); }
+    body.app-shell .agent-visual-layer.is-ready.has-transcript canvas { opacity: .34; filter: saturate(.96) contrast(1.08) brightness(1.06); }
+    html[data-theme="light"] body.app-shell .agent-visual-layer.is-ready canvas { opacity: .78; filter: saturate(1.06) contrast(1.12) brightness(1.02); mix-blend-mode: multiply; }
+    body.app-shell .chat-inner { width: min(920px, calc(100% - 56px)); height: 100%; padding: 24px 0 18px; }
+    body.app-shell .welcome-state { min-height: 0; padding: 22px 18px; }
+    body.app-shell .agent-visual-layer.is-ready + .chat-stage .welcome-state { justify-content: flex-end; padding-bottom: clamp(18px, 3vh, 32px); }
+    body.app-shell .welcome-copy { width: min(660px, 100%); display: flex; flex-direction: column; align-items: center; padding: 18px 26px 16px; border: 1px solid var(--agent-message-border); border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.04), rgba(255,255,255,.012)), var(--agent-message-bg); box-shadow: 0 24px 80px rgba(0, 0, 0, .18), inset 0 1px rgba(255, 255, 255, .045); backdrop-filter: blur(26px) saturate(1.1); -webkit-backdrop-filter: blur(26px) saturate(1.1); }
+    body.app-shell .welcome-kicker { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 10px; color: var(--app-muted); font-size: 10px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; }
+    body.app-shell .welcome-kicker > span:first-child { width: 6px; height: 6px; border-radius: 50%; background: var(--app-green); box-shadow: 0 0 0 5px rgba(91, 189, 152, .1); }
+    body.app-shell .welcome-state h1,
+    body.app-shell .agent-visual-layer.is-ready + .chat-stage .welcome-state h1 { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--app-ink); font-size: clamp(26px, 3.2vw, 42px); font-weight: 520; line-height: 1.12; letter-spacing: -.055em; backdrop-filter: none; }
+    body.app-shell .welcome-copy > p { max-width: 520px; margin: 10px auto 0; color: var(--app-muted); font-size: 12.5px; line-height: 1.55; }
+    body.app-shell .welcome-capabilities { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    body.app-shell .welcome-capabilities span { padding: 6px 10px; border: 1px solid var(--app-line); border-radius: 999px; color: var(--app-dim); background: rgba(255, 255, 255, .02); font-size: 10px; font-weight: 600; }
+    body.app-shell .transcript-head { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    body.app-shell .transcript-title { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: .16em; }
+    body.app-shell .transcript-title::after { content: ""; display: inline-block; width: 44px; height: 1px; margin: 0 0 3px 12px; background: var(--app-line-strong); }
+    body.app-shell .caption-log-line { gap: 14px; margin-bottom: 30px; }
+    body.app-shell .message-avatar { width: 32px; height: 32px; border: 1px solid var(--app-line); border-radius: 11px; }
+    body.app-shell .caption-log-line.assistant .message-avatar { color: var(--app-green-bright); background: rgba(91, 189, 152, .1); }
+    body.app-shell .message-meta { margin-bottom: 7px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+    body.app-shell .message-bubble { font-size: 15.5px; line-height: 1.72; }
+    body.app-shell .caption-log-line.assistant .message-body { padding: 14px 16px; border-radius: 5px 20px 20px 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, .10); }
+    body.app-shell .caption-log-line.user .message-bubble { padding: 11px 15px; border-radius: 20px 5px 20px 20px; }
+    body.app-shell .composer-dock { width: min(920px, calc(100% - 56px)); padding: 0 0 22px; position: relative; z-index: 3; }
+    body.app-shell .call-strip { min-height: 76px; margin-bottom: 10px; padding: 9px 14px; border: 1px solid var(--app-line-strong); border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.012)), var(--composer-bg); box-shadow: var(--composer-shadow); backdrop-filter: blur(26px) saturate(1.18); -webkit-backdrop-filter: blur(26px) saturate(1.18); }
+    body.app-shell .voice-wave { gap: 8px; padding: 8px 10px; border: 0; background: transparent; }
+    body.app-shell .voice-wave-label { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 8px; letter-spacing: .12em; }
+    body.app-shell .voice-wave-bars { height: 24px; gap: 3px; }
+    body.app-shell .voice-wave-bars span { max-width: 3px; background: var(--app-dim); opacity: .3; }
+    body.app-shell .controls { gap: 10px; }
+    body.app-shell .btn-side { width: 42px; height: 42px; border-color: var(--app-line); background: rgba(255, 255, 255, .025); }
+    body.app-shell .btn-main { width: 58px; height: 58px; border: 1px solid rgba(255, 255, 255, .2); background: radial-gradient(circle at 32% 22%, #8be2bf, #4aaf89 54%, #25815f); box-shadow: 0 12px 34px rgba(57, 155, 119, .26), 0 0 0 7px rgba(91, 189, 152, .07), inset 0 1px rgba(255, 255, 255, .34); font-size: 12px; font-weight: 650; }
+    body.app-shell .btn-main:hover { background: radial-gradient(circle at 32% 22%, #9cebc9, #5bbd98 54%, #2a8b67); box-shadow: 0 16px 42px rgba(57, 155, 119, .34), 0 0 0 8px rgba(91, 189, 152, .09), inset 0 1px rgba(255, 255, 255, .34); transform: translateY(-1px); }
+    body.app-shell .btn-main.is-live,
+    body.app-shell .btn-main.stop { background: radial-gradient(circle at 32% 22%, #ff9d8f, #d75449 56%, #a52f2b); box-shadow: 0 12px 34px rgba(196, 70, 62, .26), 0 0 0 7px rgba(215, 84, 73, .07), inset 0 1px rgba(255, 255, 255, .28); }
+    body.app-shell .btn-main.is-connecting,
+    body.app-shell .btn-main.is-ending { height: 52px; min-width: 76px; }
+    body.app-shell .composer { border-color: var(--app-line); border-radius: 18px; background: var(--composer-bg); box-shadow: 0 16px 44px rgba(0, 0, 0, .14), inset 0 1px rgba(255,255,255,.035); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+    body.app-shell .composer-row { padding: 5px 5px 5px 17px; }
+    body.app-shell .composer textarea { font-size: 13.5px; }
+    body.app-shell .composer .btn-send { width: 40px; height: 40px; background: var(--app-ink); color: var(--panel-bg); box-shadow: none; }
+    body.app-shell .composer .btn-send:disabled,
+    html[data-theme="light"] body.app-shell .composer .btn-send:disabled { color: var(--app-dim); background: rgba(255, 255, 255, .055); }
+    body.app-shell .composer-dock > .hint { margin-top: 9px; background: var(--composer-bg); backdrop-filter: blur(16px); }
+    body.app-shell .settings-panel { top: 12px; right: 12px; height: calc(100dvh - 24px); border: 1px solid var(--app-line-strong); border-radius: 24px; overflow: hidden; backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); }
+    body.app-shell .settings-card { border-radius: 18px; }
+    @media (prefers-reduced-motion: reduce) {
+      body.app-shell .agent-visual-layer::before { animation: none !important; transition: none; }
+    }
+    @media (max-width: 900px) {
+      body.app-shell .workspace { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0; }
+      body.app-shell .conversation-shell { height: 100dvh; border: 0; border-radius: 0; }
+      body.app-shell .session-sidebar { inset: 10px auto 10px 10px; height: calc(100dvh - 20px); border-radius: 22px; }
+      body.app-shell .settings-panel { top: 10px; right: 10px; height: calc(100dvh - 20px); }
+    }
+    @media (max-width: 600px) {
+      body.app-shell .conversation-header { min-height: 68px; padding: 12px 14px; }
+      body.app-shell .header-eyebrow { display: none; }
+      body.app-shell .session-status .status-divider,
+      body.app-shell .session-status #subText { display: none; }
+      body.app-shell .header-chip { min-width: 34px; padding: 0 8px; font-size: 10px; }
+      body.app-shell .chat-inner,
+      body.app-shell .composer-dock { width: calc(100% - 24px); }
+      body.app-shell .welcome-copy { padding: 18px 16px 16px; border-radius: 20px; }
+      body.app-shell .welcome-state h1,
+      body.app-shell .agent-visual-layer.is-ready + .chat-stage .welcome-state h1 { font-size: clamp(25px, 8vw, 34px); }
+      body.app-shell .welcome-copy > p { font-size: 12px; }
+      body.app-shell .welcome-capabilities { display: none; }
+      body.app-shell .agent-visual-layer::before { width: 88vw; top: 42%; }
+      body.app-shell .call-strip { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; min-height: 70px; padding: 7px 8px; border-radius: 22px; }
+      body.app-shell .voice-wave { padding: 6px; }
+      body.app-shell .voice-wave-bars { gap: 2px; }
+      body.app-shell .btn-side { width: 36px; height: 36px; }
+      body.app-shell .btn-main { width: 54px; height: 54px; }
+      body.app-shell .composer-dock { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+    }
   </style>
 </head>
-<body class="app-shell">
+<body class="app-shell" data-voice-state="idle">
   <div class="workspace">
     <aside id="sessionSidebar" class="session-sidebar" data-i18n-aria="sessions" aria-label="会话">
       <div class="sidebar-top">
@@ -1493,6 +1760,7 @@
           <span class="brand-mark">V</span>
           <span class="brand-text">
             <span class="brand-title" data-i18n="brandTitle">语音通话</span>
+            <span class="brand-sub" data-i18n="brandSub">实时陪伴式对话</span>
           </span>
         </a>
         <button type="button" id="btnCloseSessions" class="icon-button mobile-only" data-i18n-title="closeSessions" data-i18n-aria="closeSessions" title="关闭会话栏" aria-label="关闭会话栏">×</button>
@@ -1503,6 +1771,10 @@
       </button>
       <div class="sidebar-label" data-i18n="sessions">会话</div>
       <nav id="sessionList" class="session-list" data-i18n-aria="sessions" aria-label="会话"></nav>
+      <div class="sidebar-footer">
+        <div class="privacy-status"><span aria-hidden="true"></span><span data-i18n="privacyStatus">端到端实时传输</span></div>
+        <p class="footer-note" data-i18n="privacyNote">音频直连上游，不经过网关存储。</p>
+      </div>
     </aside>
 
     <div id="sessionContextMenu" class="session-context-menu" role="menu" aria-hidden="true" hidden>
@@ -1517,6 +1789,7 @@
         <div class="header-left">
           <button type="button" id="btnOpenSessions" class="icon-button" data-i18n-title="openSessions" data-i18n-aria="openSessions" title="打开会话栏" aria-label="打开会话栏">☰</button>
           <div>
+            <div class="header-eyebrow"><span data-i18n="roomLabel">VOICE ROOM</span><span aria-hidden="true">/</span><span data-i18n="roomPrivacy">PRIVATE</span></div>
             <div id="sessionTitle" class="session-title" data-i18n="sessionNew">新会话</div>
             <div class="session-status">
               <span id="orb" class="orb idle" aria-hidden="true"></span>
@@ -1539,7 +1812,16 @@
         <div class="chat-inner">
           <div id="welcomeState" class="welcome-state">
             <div class="welcome-mark">V</div>
-            <h1 data-i18n="welcomeTitle">开始语音对话</h1>
+            <div class="welcome-copy">
+              <div class="welcome-kicker"><span aria-hidden="true"></span><span data-i18n="welcomeKicker">自然对话 · 随时打断</span></div>
+              <h1 data-i18n="welcomeTitle">开口就好，我在听</h1>
+              <p data-i18n="welcomeDescription">不需要组织完美的句子。像和一个真正理解你的人聊天一样，自然地说。</p>
+              <div class="welcome-capabilities" data-i18n-aria="capabilityAria" aria-label="语音能力">
+                <span data-i18n="capabilityRealtime">实时回应</span>
+                <span data-i18n="capabilityInterrupt">自然打断</span>
+                <span data-i18n="capabilityTranscript">同步字幕</span>
+              </div>
+            </div>
           </div>
           <section class="transcript" data-i18n-aria="transcriptAria" aria-label="当前会话内容">
             <div class="transcript-head">
@@ -1569,7 +1851,7 @@
         </div>
         <div class="composer">
           <div class="composer-row">
-            <textarea id="textInput" data-i18n-placeholder="composerPlaceholder" placeholder="通话中可发送文本…" rows="1" disabled></textarea>
+            <textarea id="textInput" data-i18n-placeholder="composerPlaceholder" placeholder="也可以输入文字…" rows="1" disabled></textarea>
             <button type="button" class="btn-send" id="btnSend" data-i18n-title="send" data-i18n-aria="send" title="发送文本" aria-label="发送文本" disabled>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 19V5M12 5l-6 6M12 5l6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1874,6 +2156,7 @@
     zh: {
       pageTitle: '语音通话',
       brandTitle: '语音通话',
+      brandSub: '实时陪伴式对话',
       newSession: '新会话',
       sessions: '会话',
       sessionNew: '新会话',
@@ -1920,7 +2203,17 @@
       themeLight: '浅色',
       themeDark: '深色',
       toastTheme: '界面主题已切换',
-      welcomeTitle: '开始语音对话',
+      roomLabel: 'VOICE ROOM',
+      roomPrivacy: 'PRIVATE',
+      welcomeKicker: '自然对话 · 随时打断',
+      welcomeTitle: '开口就好，我在听',
+      welcomeDescription: '不需要组织完美的句子。像和一个真正理解你的人聊天一样，自然地说。',
+      capabilityRealtime: '实时回应',
+      capabilityInterrupt: '自然打断',
+      capabilityTranscript: '同步字幕',
+      capabilityAria: '语音能力',
+      privacyStatus: '端到端实时传输',
+      privacyNote: '音频直连上游，不经过网关存储。',
       statusReady: '准备就绪',
       subReady: '点击下方按钮开始',
       meterLocal: '我的声音',
@@ -1933,7 +2226,7 @@
       speaker: '扬声器',
       speakerOn: '打开扬声器',
       speakerOff: '关闭扬声器',
-      composerPlaceholder: '通话中可发送文本…',
+      composerPlaceholder: '也可以输入文字…',
       send: '发送文本',
       composerHintIdle: '开始通话后可发送文本',
       composerHintSending: '提交中…',
@@ -2038,6 +2331,7 @@
     en: {
       pageTitle: 'Voice Call',
       brandTitle: 'Voice Call',
+      brandSub: 'A realtime voice companion',
       newSession: 'New chat',
       sessions: 'Chats',
       sessionNew: 'New chat',
@@ -2084,7 +2378,17 @@
       themeLight: 'Light',
       themeDark: 'Dark',
       toastTheme: 'Theme updated',
-      welcomeTitle: 'Start a voice call',
+      roomLabel: 'VOICE ROOM',
+      roomPrivacy: 'PRIVATE',
+      welcomeKicker: 'Speak naturally · Interrupt anytime',
+      welcomeTitle: 'Just speak. I am listening.',
+      welcomeDescription: 'No need to find the perfect words. Talk naturally, like someone is truly present with you.',
+      capabilityRealtime: 'Realtime replies',
+      capabilityInterrupt: 'Natural interruption',
+      capabilityTranscript: 'Live transcript',
+      capabilityAria: 'Voice capabilities',
+      privacyStatus: 'End-to-end realtime',
+      privacyNote: 'Audio connects upstream directly and is never stored by the gateway.',
       statusReady: 'Ready',
       subReady: 'Tap the button below to start',
       meterLocal: 'You',
@@ -2097,7 +2401,7 @@
       speaker: 'Speaker',
       speakerOn: 'Unmute speaker',
       speakerOff: 'Mute speaker',
-      composerPlaceholder: 'Send text during the call…',
+      composerPlaceholder: 'Or type a message…',
       send: 'Send',
       composerHintIdle: 'Start a call to send text',
       composerHintSending: 'Sending…',
@@ -3539,6 +3843,7 @@
       subVars: subVars || null
     };
     orb.className = 'orb ' + (state || 'idle');
+    document.body.setAttribute('data-voice-state', state || 'idle');
     statusText.textContent = title || '';
     subText.textContent = sub || '';
     setAgentVisualState(state);
