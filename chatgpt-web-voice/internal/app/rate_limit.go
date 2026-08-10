@@ -19,10 +19,8 @@ type publicRateEntry struct {
 }
 
 const (
-	// Keep compatibility with already-open voice pages that still emit caption
-	// deltas several times per second. Newly served pages coalesce those writes.
-	publicConversationWriteLimit = 300
-	publicRecordingChunkLimit    = 60
+	publicConversationWriteLimit = 12000
+	publicRecordingChunkLimit    = 3000
 	maxPublicRateEntries         = 4096
 	rateSweepInterval            = 10 * time.Second
 	rateEntryMaxAge              = 2 * time.Minute
@@ -48,11 +46,11 @@ type publicRateLimiter struct {
 func newPublicRateLimiter(cfg config.Config) *publicRateLimiter {
 	sessionLimit := cfg.PublicSessionRate
 	if sessionLimit < 1 {
-		sessionLimit = 10
+		sessionLimit = 300
 	}
 	writeLimit := cfg.PublicWriteRate
 	if writeLimit < 1 {
-		writeLimit = 60
+		writeLimit = 3000
 	}
 	return &publicRateLimiter{
 		sessions:           newPublicRateBucket(),

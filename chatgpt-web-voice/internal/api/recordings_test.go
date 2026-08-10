@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/callsessions"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/store"
@@ -34,8 +35,17 @@ func TestRecordingUploadAndAdminAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	callSessionStore := callsessions.NewStore(db)
+	if err := callSessionStore.Upsert(callsessions.Session{
+		VoiceSessionID: "vs_api",
+		Owner:          "admin:",
+		CallerKind:     callsessions.CallerAdmin,
+		Status:         callsessions.StatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
-	New(Dependencies{Conversations: conversationStore, Recordings: recordingStore}).Register(mux)
+	New(Dependencies{Conversations: conversationStore, CallSessions: callSessionStore, Recordings: recordingStore}).Register(mux)
 
 	created := performJSONRequest(t, mux, http.MethodPost, "/api/recordings", map[string]any{
 		"conversation_id":  conversation.ID,
@@ -79,6 +89,9 @@ func TestRecordingUploadAndAdminAPI(t *testing.T) {
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "API recording") || !strings.Contains(list.Body.String(), `"completed":1`) {
 		t.Fatalf("list status=%d body=%s", list.Code, list.Body.String())
 	}
+	if !strings.Contains(list.Body.String(), `"caller_kind":"admin"`) {
+		t.Fatalf("admin recording was misclassified: %s", list.Body.String())
+	}
 	detail := performJSONRequest(t, mux, http.MethodGet, "/api/admin/recordings/"+createBody.Recording.ID, nil)
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "record this") {
 		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
@@ -99,5 +112,88 @@ func TestRecordingUploadAndAdminAPI(t *testing.T) {
 	missing := performJSONRequest(t, mux, http.MethodGet, "/api/admin/recordings/"+createBody.Recording.ID, nil)
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("expected deleted recording 404, got %d", missing.Code)
+	}
+}
+
+func TestRecordingCreationRequiresOwnedActiveCallSession(t *testing.T) {
+	tempDir := t.TempDir()
+	db, err := store.Open(filepath.Join(tempDir, "voice.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conversationStore := conversations.NewStore(db)
+	conversation, err := conversationStore.Create("default", "Bound recording")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordingStore, err := recordings.NewStore(db, filepath.Join(tempDir, "recordings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callSessionStore := callsessions.NewStore(db)
+	for _, session := range []callsessions.Session{
+		{
+			VoiceSessionID: "vs_foreign",
+			Owner:          "guest:other",
+			CallerKind:     callsessions.CallerGuest,
+			Status:         callsessions.StatusActive,
+		},
+		{
+			VoiceSessionID: "vs_released",
+			Owner:          "admin:",
+			CallerKind:     callsessions.CallerAdmin,
+			Status:         callsessions.StatusReleased,
+		},
+		{
+			VoiceSessionID: "vs_owned",
+			Owner:          "admin:",
+			CallerKind:     callsessions.CallerAdmin,
+			Status:         callsessions.StatusActive,
+		},
+	} {
+		if err := callSessionStore.Upsert(session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mux := http.NewServeMux()
+	New(Dependencies{Conversations: conversationStore, CallSessions: callSessionStore, Recordings: recordingStore}).Register(mux)
+
+	for _, test := range []struct {
+		name      string
+		sessionID string
+		wantCode  int
+	}{
+		{name: "missing", sessionID: "vs_missing", wantCode: http.StatusNotFound},
+		{name: "foreign", sessionID: "vs_foreign", wantCode: http.StatusNotFound},
+		{name: "released", sessionID: "vs_released", wantCode: http.StatusConflict},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := performJSONRequest(t, mux, http.MethodPost, "/api/recordings", map[string]any{
+				"conversation_id":  conversation.ID,
+				"voice_session_id": test.sessionID,
+				"mime_type":        "audio/webm",
+			})
+			if response.Code != test.wantCode {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.wantCode, response.Body.String())
+			}
+		})
+	}
+
+	created := performJSONRequest(t, mux, http.MethodPost, "/api/recordings", map[string]any{
+		"conversation_id":  conversation.ID,
+		"voice_session_id": "vs_owned",
+		"mime_type":        "audio/webm",
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("owned active create status=%d body=%s", created.Code, created.Body.String())
+	}
+	duplicate := performJSONRequest(t, mux, http.MethodPost, "/api/recordings", map[string]any{
+		"conversation_id":  conversation.ID,
+		"voice_session_id": "vs_owned",
+		"mime_type":        "audio/webm",
+	})
+	if duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate status=%d body=%s", duplicate.Code, duplicate.Body.String())
 	}
 }

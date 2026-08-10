@@ -79,6 +79,11 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("recording store setup failed: %w", err)
 	}
+	if recovered, recoveryErr := recordingStore.RecoverInterrupted(); recoveryErr != nil {
+		logger.Warn("recording_orphan_recovery_failed", "error", recoveryErr)
+	} else if recovered > 0 {
+		logger.Info("recording_orphans_recovered", "count", recovered)
+	}
 	releasedOrphans, err := callSessionStore.MarkAllActiveReleased()
 	if err != nil {
 		return fmt.Errorf("release orphan call sessions failed: %w", err)
@@ -122,6 +127,7 @@ func Run() error {
 		Addr:              normalizeListenAddr(cfg.ListenAddr),
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),

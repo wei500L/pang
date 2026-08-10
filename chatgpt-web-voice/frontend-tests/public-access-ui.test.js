@@ -56,9 +56,9 @@ test("voice page records the microphone through a bounded best-effort upload que
   assert.match(voiceHTML, /new MediaRecorder\(stream/);
   assert.match(voiceHTML, /RECORDING_CHUNK_MS = 5000/);
   assert.match(voiceHTML, /RECORDING_AUDIO_BITS_PER_SECOND = 16000/);
-  assert.match(voiceHTML, /RECORDING_MAX_CHUNKS = 14400/);
-  assert.match(voiceHTML, /RECORDING_MAX_PENDING_BYTES = 8 << 20/);
-  assert.match(voiceHTML, /RECORDING_GLOBAL_MAX_PENDING_BYTES = 8 << 20/);
+  assert.match(voiceHTML, /RECORDING_MAX_CHUNKS = 86400/);
+  assert.match(voiceHTML, /RECORDING_MAX_PENDING_BYTES = 32 << 20/);
+  assert.match(voiceHTML, /RECORDING_GLOBAL_MAX_PENDING_BYTES = 64 << 20/);
   assert.match(voiceHTML, /RECORDING_FETCH_TIMEOUT_MS = 8000/);
   assert.match(voiceHTML, /abortBackgroundRecordingUploads\('new call took priority/);
   assert.match(voiceHTML, /recordingFinalizingStates\.length/);

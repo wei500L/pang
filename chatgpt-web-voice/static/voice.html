@@ -2062,9 +2062,9 @@
   var recordingFinalizingStates = [];
   var RECORDING_CHUNK_MS = 5000;
   var RECORDING_AUDIO_BITS_PER_SECOND = 16000;
-  var RECORDING_MAX_CHUNKS = 14400;
-  var RECORDING_MAX_PENDING_BYTES = 8 << 20;
-  var RECORDING_GLOBAL_MAX_PENDING_BYTES = 8 << 20;
+  var RECORDING_MAX_CHUNKS = 86400;
+  var RECORDING_MAX_PENDING_BYTES = 32 << 20;
+  var RECORDING_GLOBAL_MAX_PENDING_BYTES = 64 << 20;
   var RECORDING_FETCH_TIMEOUT_MS = 8000;
   var audioCtx = null;
   var localAnalyser = null, remoteAnalyser = null;

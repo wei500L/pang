@@ -143,6 +143,8 @@
       var detailAudio = document.getElementById('detailAudio');
       var toast = document.getElementById('toast');
       var toastTimer = 0;
+      var listController = null;
+      var detailController = null;
 
       function showToast(message) {
         toast.textContent = message; toast.classList.add('show'); clearTimeout(toastTimer);
@@ -185,7 +187,7 @@
       function renderRow(item) {
         var title = item.conversation_title || '未命名对话';
         var media = item.audio_available ? (formatDuration(item.duration_ms) + ' · ' + formatBytes(item.byte_size)) : '无可播放音频';
-        var deleteButton = item.status === 'recording' ? '' : '<button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>';
+        var deleteButton = '<button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>';
         return '<tr data-id="' + escapeHTML(item.id) + '">' +
           '<td><div class="record-title"><strong title="' + escapeHTML(title) + '">' + escapeHTML(title) + '</strong><span title="' + escapeHTML(item.id) + '">' + escapeHTML(item.id) + '</span></div></td>' +
           '<td>' + escapeHTML(item.caller_label || item.caller_kind || 'guest') + '</td>' +
@@ -208,11 +210,13 @@
       async function loadRecords(showMessage) {
         var params = new URLSearchParams(); var query = searchInput.value.trim();
         if (query) params.set('q', query); if (statusFilter.value !== 'all') params.set('status', statusFilter.value); params.set('limit', '300');
+        if (listController) listController.abort();
+        listController = window.AbortController ? new AbortController() : null;
         try {
-          var data = await apiFetch('/api/admin/recordings?' + params.toString());
+          var data = await apiFetch('/api/admin/recordings?' + params.toString(), listController ? { signal: listController.signal } : {});
           recordings = Array.isArray(data.recordings) ? data.recordings : []; stats = data.stats || {}; render();
           if (showMessage) showToast('已刷新');
-        } catch (error) { showToast('加载失败: ' + error.message); }
+        } catch (error) { if (!error || error.name !== 'AbortError') showToast('加载失败: ' + error.message); }
       }
       function renderMessages(messages) {
         var host = document.getElementById('transcriptList'); host.textContent = '';
@@ -227,18 +231,20 @@
         });
       }
       async function openDetail(id) {
+        if (detailController) detailController.abort();
+        detailController = window.AbortController ? new AbortController() : null;
         try {
-          var data = await apiFetch('/api/admin/recordings/' + encodeURIComponent(id)); var item = data.recording || {};
+          var data = await apiFetch('/api/admin/recordings/' + encodeURIComponent(id), detailController ? { signal: detailController.signal } : {}); var item = data.recording || {};
           selectedID = id; document.getElementById('detailTitle').textContent = item.conversation_title || '记录详情';
           document.getElementById('detailID').textContent = item.id || '—';
           document.getElementById('detailVoiceSession').textContent = item.voice_session_id || '—';
           document.getElementById('detailMedia').textContent = formatDuration(item.duration_ms) + ' / ' + formatBytes(item.byte_size);
           var error = document.getElementById('detailError'); error.textContent = item.error_message || ''; error.classList.toggle('show', !!item.error_message);
-          document.getElementById('detailDelete').disabled = item.status === 'recording';
+          document.getElementById('detailDelete').disabled = false;
           if (item.audio_available) { detailAudio.hidden = false; detailAudio.src = item.audio_url; detailAudio.load(); }
           else { detailAudio.pause(); detailAudio.removeAttribute('src'); detailAudio.hidden = true; }
           renderMessages(Array.isArray(data.messages) ? data.messages : []); detailDialog.showModal();
-        } catch (error) { showToast('读取失败: ' + error.message); }
+        } catch (error) { if (!error || error.name !== 'AbortError') showToast('读取失败: ' + error.message); }
       }
       async function deleteRecord(id) {
         if (!id || !window.confirm('删除这条录音及其聊天快照？此操作不可恢复。')) return;
@@ -259,7 +265,10 @@
       document.getElementById('detailClose').onclick = function () { detailDialog.close(); };
       document.getElementById('detailDone').onclick = function () { detailDialog.close(); };
       document.getElementById('detailDelete').onclick = function () { deleteRecord(selectedID); };
-      detailDialog.addEventListener('close', function () { detailAudio.pause(); detailAudio.removeAttribute('src'); selectedID = ''; });
+      detailDialog.addEventListener('close', function () {
+        if (detailController) detailController.abort(); detailController = null;
+        detailAudio.pause(); detailAudio.removeAttribute('src'); selectedID = '';
+      });
       document.getElementById('logoutButton').onclick = async function () {
         try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: withCSRFHeaders({}) }); } catch (e) {}
         window.location.replace('/login');
