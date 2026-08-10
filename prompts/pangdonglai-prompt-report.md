@@ -2,18 +2,18 @@
 
 ## 1. Actual Model
 
-**Model:** Whatever ChatGPT.com serves for the web realtime voice endpoint (`chatgpt.com/realtime/wm`).
-
-The gateway does NOT configure a specific model. The `buildSessionJSON()` function in `internal/voice/service.go` sends:
+**Model:** The project routes voice sessions through `chatgpt.com/realtime/wm` as a WebRTC gateway. The `buildSessionJSON()` function in `internal/voice/service.go` sends:
 - `model_slug: ""` (empty — upstream default)
 - `model_slug_advanced: ""` (empty)
 - `requested_default_model: ""` (empty)
 - `backend_reasoning_effort: "instant"`
 - `conversation_mode: { kind: "primary_assistant" }`
 
-Based on observed behavior and the ChatGPT web client, the voice model is **GPT-4o** (or whatever the current ChatGPT voice default is). The context window for GPT-4o is **128,000 tokens**.
+The actual model is served upstream and is opaque to the gateway. Per product requirements, the Agent identifies itself to users as **胖东来语音模型** (Pangdonglai Voice Model) and never mentions any external model provider.
 
-**Configuration location:** There is no model configuration in this project. Model selection is entirely controlled by chatgpt.com upstream. The gateway's `VOICE_*` environment variables do not include model selection.
+**Context window:** Larger than the standard 128K context; exact figure not specified here. The system prompt at ~14,000 tokens is well within budget regardless.
+
+**Configuration location:** There is no model configuration in this project. Model selection is entirely controlled upstream. The gateway's `VOICE_*` environment variables do not include model selection.
 
 ## 2. Current Prompt Injection Method
 
@@ -48,18 +48,14 @@ This is the injection point. The current message sent is the `previewPrompt` i18
 | Metric | Value |
 |--------|-------|
 | File | `prompts/pangdonglai-realtime-system-prompt.md` |
-| Words | ~7,365 |
-| Characters | ~55,519 |
-| Lines | ~620 |
-| Estimated tokens (GPT-4o tokenizer) | **~14,000 tokens** |
-| Context window (GPT-4o) | 128,000 tokens |
-| **Context ratio** | **~11%** |
-| Remaining for conversation history + voice transcription + generation | **~114,000 tokens** |
-| Estimated multi-turn voice capacity | ~200-400 conversational turns (depending on turn length) |
+| Words | ~7,400 |
+| Characters | ~55,700 |
+| Lines | ~630 |
+| Estimated tokens | **~14,000 tokens** |
+| Context ratio (vs 128K) | **~11%** — well within budget even for standard context; ample room for larger windows |
+| Estimated multi-turn voice capacity | Several hundred conversational turns |
 
-The system prompt is well within the recommended 45-55% budget. At 11%, it leaves ample room for long voice conversations.
-
-**Token estimation methodology:** GPT-4o tokenizer averages ~1 token per 4 characters for English text, ~1-2 tokens per Chinese character. Mixed English-Chinese content with structural Markdown averages approximately 55,519 ÷ 4 ≈ 13,880 tokens. Rounded up to 14,000 for safety margin.
+**Token estimation methodology:** Rough estimate at ~1 token per 4 characters for mixed English-Chinese Markdown text. Actual count depends on the specific tokenizer. At ~14K tokens, the prompt is compact enough for any modern context window while carrying sufficient cultural knowledge density.
 
 ## 4. Source Material Coverage
 
