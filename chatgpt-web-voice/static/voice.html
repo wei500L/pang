@@ -2230,19 +2230,28 @@
   var autoInterruptCooldownUntil = 0;
   var awaitingInterruptAck = false;
   var playbackSuppressed = false;
+  var initializationPlaybackSuppressed = false;
+  var suppressInitializationAssistant = false;
   var pendingVoicePreview = false;
   var suppressPreviewAssistantUntil = 0;
   var micPermissionWarmed = false;
   var systemPromptSent = false;
   var promptWelcomeWaiter = null;
   var promptWelcomeAssistantSeen = false;
+  var promptWelcomeQuietTimer = 0;
+  var promptWelcomeFallbackTimer = 0;
+  var promptWelcomeSilentTimer = 0;
+  var promptWelcomeQuietMs = 2200;
+  var promptWelcomeAllowStateFinish = true;
+  var promptWelcomeExpectedText = '';
+  var promptWelcomeCollectedText = '';
   var systemPromptCache = Object.create(null);
   var systemPromptLoadPromise = Object.create(null);
   var contextInitializationPromise = null;
   var contextReady = false;
   var ignoredPromptMessageIds = new Set();
   var conversationMode = 'personal';
-  var promptVersions = { personal: 'personal-v1.1', organization: 'organization-v1.1' };
+  var promptVersions = { personal: 'personal-v1.9', organization: 'organization-v1.9' };
   var promptPaths = {
     personal: '/static/pangdonglai-system-prompt.txt',
     organization: '/static/pangdonglai-system-prompt-enterprise.txt'
@@ -3201,6 +3210,12 @@
     ensureUpstreamIdsForHangup();
     var active = getActiveConversationSession();
     if (active && active.titleLocked) titleLocked = true;
+    // The upstream title is often generated from the hidden initialization
+    // prompt. Once the first real user utterance has produced a local title,
+    // keep it instead of replacing it with "欢迎语生成" or prompt wording.
+    if (active && active.title && !isPlaceholderLocalTitle(active.title)) {
+      return;
+    }
     if (upstreamTitleFetchInFlight) {
       return;
     }
@@ -4201,7 +4216,11 @@
   function markCallLive(uiState, titleKey, subKey) {
     inCall = true;
     beginAutoInterruptCalibration();
-    setUIKey(uiState || 'listening', titleKey || 'statusListening', subKey || 'subConnected');
+    if (contextReady) {
+      setUIKey(uiState || 'listening', titleKey || 'statusListening', subKey || 'subConnected');
+    } else {
+      setUIKey('connecting', 'statusConnecting', 'subEntering');
+    }
     updateCallControls();
     updateComposerState();
   }
@@ -4252,7 +4271,7 @@
       }
     }
     if (btnMute) {
-      btnMute.disabled = !callLive;
+      btnMute.disabled = !callLive || !contextReady;
       btnMute.classList.toggle('is-live', callLive && !muted);
       btnMute.classList.toggle('is-muted', callLive && muted);
       btnMute.classList.toggle('muted', muted);
@@ -4491,6 +4510,7 @@
   }
 
   function clearPlaybackSuppress() {
+    if (initializationPlaybackSuppressed) return;
     if (!playbackSuppressed) return;
     playbackSuppressed = false;
     applyRemoteAudioOutput();
@@ -4671,8 +4691,31 @@
   function rememberDcText(role, text) {
     var clean = String(text || '').trim();
     if (!clean) return;
+    // Microphone input is intentionally disabled during prompt initialization.
+    // Ignore any upstream echo/noise transcript until the welcome turn is done.
+    if (role === 'user' && !contextReady) {
+      log('ignored user transcript before context ready', clean);
+      return;
+    }
     if (role === 'user') rememberLocalMessage('user', clean);
-    if (role === 'assistant') showReply(clean);
+    if (role === 'assistant') {
+      notePromptWelcomeAssistantText(clean);
+      if (suppressInitializationAssistant) {
+        var normalizedInitializationText = normalizePromptWelcomeText(clean);
+        if (
+          promptWelcomeExpectedText &&
+          normalizedInitializationText &&
+          promptWelcomeExpectedText.indexOf(normalizedInitializationText) === 0
+        ) {
+          // The audible activation welcome has begun. Delayed acknowledgements
+          // from the muted knowledge turn remain hidden.
+          suppressInitializationAssistant = false;
+        } else {
+          return;
+        }
+      }
+      showReply(clean);
+    }
   }
 
   function sendVoicePreviewGreeting() {
@@ -4760,44 +4803,128 @@
     return true;
   }
 
+  function promptActivationText(mode) {
+    if (normalizeConversationMode(mode) === 'organization') {
+      return '知识资料已经加载完成。现在正式开始组织模式。你的第一轮语音只说这一遍，不增加前后缀，不解释，不改写，不重复：你好，我是自由·爱，以真诚、善良、尊重、自由和爱为底色。今天想聊聊团队里的哪件事？说完立即停下，等待用户开口。';
+    }
+    return '知识资料已经加载完成。现在正式开始个人模式。你的第一轮语音只说这一遍，不增加前后缀，不解释，不改写，不重复：你好，我是自由·爱，以真诚、善良、尊重、自由和爱为底色。你最近最想聊点什么？说完立即停下，等待用户开口。';
+  }
+
+  function sendPromptActivation() {
+    if (!inCall || !dcChannel || dcChannel.readyState !== 'open') throw new Error(t('errDcNotReady'));
+    var message = buildBaseUserMessage({
+      content_type: 'text',
+      parts: [promptActivationText(conversationMode)]
+    });
+    ignoredPromptMessageIds.add(message.id);
+    sendRelayMessage(message);
+    parentMessageId = message.id;
+    log('prompt activation sent', conversationMode, message.id);
+  }
+
+  function normalizePromptWelcomeText(text) {
+    return String(text || '').toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]+/g, '');
+  }
+
+  function expectedPromptWelcomeText(mode) {
+    if (normalizeConversationMode(mode) === 'organization') {
+      return '你好我是自由爱以真诚善良尊重自由和爱为底色今天想聊聊团队里的哪件事';
+    }
+    return '你好我是自由爱以真诚善良尊重自由和爱为底色你最近最想聊点什么';
+  }
+
+  function finishPromptWelcomeWait(succeeded) {
+    if (!promptWelcomeWaiter) return;
+    var resolve = promptWelcomeWaiter;
+    promptWelcomeWaiter = null;
+    promptWelcomeAssistantSeen = false;
+    if (promptWelcomeQuietTimer) clearTimeout(promptWelcomeQuietTimer);
+    if (promptWelcomeFallbackTimer) clearTimeout(promptWelcomeFallbackTimer);
+    if (promptWelcomeSilentTimer) clearTimeout(promptWelcomeSilentTimer);
+    promptWelcomeQuietTimer = 0;
+    promptWelcomeFallbackTimer = 0;
+    promptWelcomeSilentTimer = 0;
+    promptWelcomeExpectedText = '';
+    promptWelcomeCollectedText = '';
+    resolve(succeeded !== false);
+  }
+
+  function notePromptWelcomeAssistantText(text) {
+    if (!promptWelcomeWaiter || !String(text || '').trim()) return;
+    promptWelcomeCollectedText = String(text).slice(-2000);
+    if (promptWelcomeExpectedText && normalizePromptWelcomeText(promptWelcomeCollectedText) !== promptWelcomeExpectedText) {
+      return;
+    }
+    promptWelcomeAssistantSeen = true;
+    if (promptWelcomeSilentTimer) clearTimeout(promptWelcomeSilentTimer);
+    promptWelcomeSilentTimer = 0;
+    if (promptWelcomeQuietTimer) clearTimeout(promptWelcomeQuietTimer);
+    // Some wm sessions omit a final listening state. Caption quietness provides
+    // a second completion signal without opening the microphone mid-welcome.
+    promptWelcomeQuietTimer = setTimeout(function () { finishPromptWelcomeWait(true); }, promptWelcomeQuietMs);
+  }
+
   function notePromptWelcomeState(state) {
     if (!promptWelcomeWaiter) return;
-    if (state === 'responding' || state === 'speaking') promptWelcomeAssistantSeen = true;
-    if (promptWelcomeAssistantSeen && (state === 'listening' || state === 'idle')) {
-      var resolve = promptWelcomeWaiter;
-      promptWelcomeWaiter = null;
-      promptWelcomeAssistantSeen = false;
-      resolve();
+    if (!promptWelcomeExpectedText && (state === 'responding' || state === 'speaking')) {
+      promptWelcomeAssistantSeen = true;
+      if (promptWelcomeSilentTimer) clearTimeout(promptWelcomeSilentTimer);
+      promptWelcomeSilentTimer = 0;
+    }
+    if (promptWelcomeAllowStateFinish && promptWelcomeAssistantSeen && (state === 'listening' || state === 'idle')) {
+      finishPromptWelcomeWait(true);
     }
   }
 
-  function waitForPromptWelcome() {
+  function waitForPromptWelcome(timeoutMs, quietMs, allowStateFinish, silentMs, expectedText) {
     return new Promise(function (resolve) {
-      var settled = false;
-      function finish() {
-        if (settled) return;
-        settled = true;
-        if (promptWelcomeWaiter === finish) promptWelcomeWaiter = null;
-        promptWelcomeAssistantSeen = false;
-        resolve();
-      }
-      promptWelcomeWaiter = finish;
+      if (promptWelcomeWaiter) finishPromptWelcomeWait(false);
+      promptWelcomeWaiter = resolve;
       promptWelcomeAssistantSeen = false;
-      setTimeout(finish, 25000);
+      promptWelcomeExpectedText = normalizePromptWelcomeText(expectedText);
+      promptWelcomeCollectedText = '';
+      promptWelcomeQuietMs = Number(quietMs) || 2200;
+      promptWelcomeAllowStateFinish = allowStateFinish !== false;
+      if (Number(silentMs) > 0) {
+        promptWelcomeSilentTimer = setTimeout(function () {
+          if (promptWelcomeWaiter && !promptWelcomeAssistantSeen) finishPromptWelcomeWait(false);
+        }, Number(silentMs));
+      }
+      promptWelcomeFallbackTimer = setTimeout(function () { finishPromptWelcomeWait(false); }, Number(timeoutMs) || 20000);
     });
   }
 
   async function initializeVoiceContext() {
     if (contextReady) return;
     try {
-      var welcomeComplete = waitForPromptWelcome();
+      // One compact knowledge message, followed by one short audible welcome.
+      // The microphone stays physically disabled throughout both turns.
+      suppressInitializationAssistant = true;
+      initializationPlaybackSuppressed = true;
+      playbackSuppressed = true;
+      applyRemoteAudioOutput();
+      var knowledgeComplete = waitForPromptWelcome(15000, 900, true, 0, '');
       await sendSystemPrompt();
-      await welcomeComplete;
+      var knowledgeSucceeded = await knowledgeComplete;
+      if (!knowledgeSucceeded) throw new Error('文化资料加载超时，请重新开始');
+
+      initializationPlaybackSuppressed = false;
+      playbackSuppressed = false;
+      applyRemoteAudioOutput();
+
+      var welcomeComplete = waitForPromptWelcome(20000, 1000, false, 0, expectedPromptWelcomeText(conversationMode));
+      sendPromptActivation();
+      var welcomeSucceeded = await welcomeComplete;
+      if (!welcomeSucceeded) throw new Error('欢迎语未完整生成，请重新开始');
       setContextReady(true);
       sendVoicePreviewGreeting();
       if (inCall) setUIKey('listening', 'statusListening', 'subConnected');
     } catch (error) {
       systemPromptSent = false;
+      suppressInitializationAssistant = false;
+      initializationPlaybackSuppressed = false;
+      playbackSuppressed = false;
+      applyRemoteAudioOutput();
       setContextReady(false);
       log('system prompt initialization fail', String(error && error.message || error));
       setUI('error', t('statusStartFail'), String(error && error.message || error), 'statusStartFail', '', null, null);
@@ -5805,6 +5932,10 @@
             if (t === 'state_update') {
               var st = (inner.payload && inner.payload.new_state) || '';
               notePromptWelcomeState(st);
+              if (!contextReady) {
+                setUIKey('connecting', 'statusConnecting', 'subEntering');
+                return;
+              }
               if (st === 'listening') {
                 markAssistantListening();
                 setUIKey('listening', 'statusListening', 'subListening');
@@ -6091,6 +6222,20 @@
       autoInterruptAmbientRms = 0;
       awaitingInterruptAck = false;
       playbackSuppressed = false;
+      initializationPlaybackSuppressed = false;
+      suppressInitializationAssistant = false;
+      if (promptWelcomeQuietTimer) clearTimeout(promptWelcomeQuietTimer);
+      if (promptWelcomeFallbackTimer) clearTimeout(promptWelcomeFallbackTimer);
+      if (promptWelcomeSilentTimer) clearTimeout(promptWelcomeSilentTimer);
+      promptWelcomeQuietTimer = 0;
+      promptWelcomeFallbackTimer = 0;
+      promptWelcomeSilentTimer = 0;
+      promptWelcomeWaiter = null;
+      promptWelcomeAssistantSeen = false;
+      promptWelcomeExpectedText = '';
+      promptWelcomeCollectedText = '';
+      promptWelcomeQuietMs = 2200;
+      promptWelcomeAllowStateFinish = true;
       contextReady = false;
       contextInitializationPromise = null;
       streamingCaptionRole = '';
@@ -6130,7 +6275,7 @@
   }
 
   function toggleMute() {
-    if (!localStream) return;
+    if (!localStream || !contextReady) return;
     muted = !muted;
     localStream.getAudioTracks().forEach(function (t) { t.enabled = !muted; });
     if (muted && window.PangAgentVisual && typeof window.PangAgentVisual.resetAudio === 'function') {
