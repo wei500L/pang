@@ -2180,6 +2180,8 @@
   var pendingVoicePreview = false;
   var suppressPreviewAssistantUntil = 0;
   var micPermissionWarmed = false;
+  var systemPromptSent = false;
+  var systemPromptText = null;
 
 
   var uiLocaleStorageKey = 'chatgpt_web_voice_ui_locale_v1';
@@ -4492,7 +4494,47 @@
     }
   }
 
+  function sendSystemPrompt() {
+    if (systemPromptSent || !inCall || !dcChannel || dcChannel.readyState !== 'open') return;
+    systemPromptSent = true;
+    if (systemPromptText) {
+      try {
+        var msg = buildBaseUserMessage({ content_type: 'text', parts: [systemPromptText] });
+        msg.metadata.system_hints = { system_prompt: true };
+        sendRelayMessage(msg);
+        log('system prompt sent', msg.id);
+      } catch (e) {
+        log('system prompt send fail', String(e));
+        systemPromptSent = false;
+      }
+      return;
+    }
+    try {
+      fetch('/static/pangdonglai-system-prompt.txt')
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(function (text) {
+          systemPromptText = text;
+          if (!inCall || !dcChannel || dcChannel.readyState !== 'open') return;
+          var msg = buildBaseUserMessage({ content_type: 'text', parts: [text] });
+          msg.metadata.system_hints = { system_prompt: true };
+          sendRelayMessage(msg);
+          log('system prompt sent', msg.id);
+        })
+        .catch(function (e) {
+          log('system prompt fetch fail', String(e));
+          systemPromptSent = false;
+        });
+    } catch (e) {
+      log('system prompt fetch error', String(e));
+      systemPromptSent = false;
+    }
+  }
+
   function onVoiceChannelReady() {
+    sendSystemPrompt();
     sendVoicePreviewGreeting();
   }
 
