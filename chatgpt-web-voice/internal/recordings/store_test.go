@@ -229,8 +229,17 @@ func TestRecordingRecoveryAndActiveDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.Recording.Status != StatusFailed || detail.Recording.ByteSize != 0 || detail.Recording.AudioAvailable {
+	if detail.Recording.Status != StatusIncomplete || detail.Recording.ByteSize != int64(len("recoverable")) || !detail.Recording.AudioAvailable {
 		t.Fatalf("unexpected recovered recording: %+v", detail.Recording)
+	}
+	file, _, err := reopened.OpenAudio(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredAudio, err := io.ReadAll(file)
+	_ = file.Close()
+	if err != nil || string(recoveredAudio) != "recoverable" {
+		t.Fatalf("unexpected recovered audio: %q err=%v", recoveredAudio, err)
 	}
 	leftoverDir := reopened.chunkDir(item.ID)
 	if err := os.MkdirAll(leftoverDir, 0o700); err != nil {
@@ -262,7 +271,7 @@ func TestRecordingRecoveryAndActiveDeletion(t *testing.T) {
 		t.Fatalf("stale recovered=%d err=%v", recovered, err)
 	}
 	staleDetail, err := reopened.GetAdmin(active.ID)
-	if err != nil || staleDetail.Recording.Status != StatusFailed {
+	if err != nil || staleDetail.Recording.Status != StatusIncomplete || staleDetail.Recording.ByteSize != int64(len("stale")) {
 		t.Fatalf("stale recording was not failed: detail=%+v err=%v", staleDetail.Recording, err)
 	}
 
@@ -308,6 +317,11 @@ func TestRecordingLimitsAndBoundedSnapshot(t *testing.T) {
 	second, err := recordingStore.Create("guest:limits", CreateInput{ConversationID: conversation.ID, MIMEType: "audio/webm"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	for index := 2; index < MaxActiveRecordingsPerOwner; index++ {
+		if _, err := recordingStore.Create("guest:limits", CreateInput{ConversationID: conversation.ID, MIMEType: "audio/webm"}); err != nil {
+			t.Fatalf("fill active recording capacity at %d: %v", index, err)
+		}
 	}
 	if _, err := recordingStore.Create("guest:limits", CreateInput{ConversationID: conversation.ID, MIMEType: "audio/webm"}); !errors.Is(err, ErrCapacity) {
 		t.Fatalf("expected active recording capacity limit, got %v", err)

@@ -78,6 +78,10 @@ func TestCallSessionUpsertUpdateAndList(t *testing.T) {
 	if err != nil || released.Status != StatusReleased || released.ReleasedAt == "" {
 		t.Fatalf("expected released session: %+v %v", released, err)
 	}
+	updatedAfterRelease, err := s.UpdateUpstream("api_key:9", "vs_key_1", 5, "conv-1", "msg-3", "AAAA-BBBB")
+	if err != nil || updatedAfterRelease.Status != StatusReleased || updatedAfterRelease.ReleasedAt == "" {
+		t.Fatalf("late context update resurrected released session: %+v %v", updatedAfterRelease, err)
+	}
 
 	items, err := s.List(ListFilter{CallerKind: CallerAdmin, Limit: 50})
 	if err != nil {

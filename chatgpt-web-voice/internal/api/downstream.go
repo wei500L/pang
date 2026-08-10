@@ -40,6 +40,7 @@ func (s *Server) downstreamSession(w http.ResponseWriter, r *http.Request) {
 	// Sticky pool account + upstream continuity are restored from call_sessions
 	// on the gateway. Do not accept or return account_id / pool secrets.
 	result, err := s.voice.CreateSession(voice.CreateSessionRequest{
+		Context:        r.Context(),
 		Owner:          owner,
 		OfferSDP:       body.OfferSDP,
 		Voice:          body.Voice,

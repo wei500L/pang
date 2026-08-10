@@ -2,6 +2,7 @@ package voice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -698,13 +699,16 @@ func (s *Service) authHeaders(token string, extra map[string]string) http.Header
 	return h
 }
 
-func (s *Service) postWMOnce(token, offerSDP, sessionJSON, proxy string) (status int, contentType, text string, err error) {
+func (s *Service) postWMOnce(ctx context.Context, token, offerSDP, sessionJSON, proxy string) (status int, contentType, text string, err error) {
 	client := httpclient.New(s.httpOptions, proxy)
 	body, ct := encodeMultipart([][2]string{
 		{"sdp", offerSDP},
 		{"session", sessionJSON},
 	})
-	req, err := http.NewRequest(http.MethodPost, wmURL, bytes.NewReader(body))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wmURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, "", "", err
 	}
@@ -902,6 +906,7 @@ func probeDetail(body string) string {
 
 // CreateSessionRequest is the input for CreateSession.
 type CreateSessionRequest struct {
+	Context        context.Context
 	Owner          string
 	OfferSDP       string
 	Voice          string
@@ -1072,7 +1077,7 @@ func (s *Service) CreateSession(req CreateSessionRequest) (*SessionResult, error
 			proxySource = "account"
 		}
 
-		status, contentType, text, err := s.postWMOnce(token, offerSDP, sessionJSON, explicitProxy)
+		status, contentType, text, err := s.postWMOnce(req.Context, token, offerSDP, sessionJSON, explicitProxy)
 		if err != nil {
 			s.logger.Error("upstream_realtime_request_failed", "account_id", account.ID, "attempt", attempt, "error", err)
 			return nil, &ServiceError{

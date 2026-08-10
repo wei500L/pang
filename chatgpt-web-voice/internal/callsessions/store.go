@@ -182,10 +182,6 @@ func (s *Store) UpdateUpstream(owner, voiceSessionID string, accountID int64, up
 	if v := strings.TrimSpace(upstreamVoiceSessionID); v != "" {
 		current.UpstreamVoiceSessionID = truncate(v, 160)
 	}
-	if current.Status == StatusReleased {
-		current.Status = StatusActive
-		current.ReleasedAt = ""
-	}
 	if _, err := s.db.Conn().Exec(`
 		UPDATE call_sessions SET
 			account_id = ?,

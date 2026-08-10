@@ -57,10 +57,6 @@ var ErrStorageFull = errors.New("recording storage safety reserve reached")
 // separate from validation errors so callers can retry later.
 var ErrCapacity = errors.New("recording active capacity reached")
 
-// ErrSessionAlreadyRecorded prevents repeated create/finalize cycles from
-// accumulating unbounded metadata for one live voice session.
-var ErrSessionAlreadyRecorded = errors.New("voice session already has a recording")
-
 // ErrCallSessionNotFound means recording creation was not bound to a call
 // session owned by the requester.
 var ErrCallSessionNotFound = errors.New("owned call session not found")
@@ -235,16 +231,6 @@ func (s *Store) Create(owner string, input CreateInput) (Item, error) {
 	if err == nil && (ownerActive >= MaxActiveRecordingsPerOwner || globalActive >= MaxActiveRecordingsGlobal) {
 		err = ErrCapacity
 	}
-	var sessionRecordingCount int
-	if err == nil && input.VoiceSessionID != "" {
-		err = tx.QueryRow(
-			`SELECT COUNT(*) FROM recordings WHERE voice_session_id = ?`,
-			input.VoiceSessionID,
-		).Scan(&sessionRecordingCount)
-	}
-	if err == nil && sessionRecordingCount > 0 {
-		err = ErrSessionAlreadyRecorded
-	}
 	if err == nil {
 		_, err = tx.Exec(`
 			INSERT INTO recordings (
@@ -267,7 +253,7 @@ func (s *Store) Create(owner string, input CreateInput) (Item, error) {
 	}
 	if err != nil {
 		_ = os.RemoveAll(chunkDir)
-		if errors.Is(err, ErrCapacity) || errors.Is(err, ErrSessionAlreadyRecorded) ||
+		if errors.Is(err, ErrCapacity) ||
 			errors.Is(err, ErrCallSessionNotFound) || errors.Is(err, ErrCallSessionInactive) {
 			return Item{}, err
 		}
@@ -897,55 +883,40 @@ func (s *Store) recordingIsStale(id string, now time.Time) bool {
 }
 
 func (s *Store) failInterrupted(owner, id string) error {
-	unlock := s.lockRecording(id)
-	defer unlock()
-	item, err := s.GetOwned(owner, id)
+	chunkCount, err := s.interruptedChunkCount(id)
 	if err != nil {
 		return err
 	}
-	if item.Status != StatusRecording {
-		return nil
-	}
-	s.db.Lock()
-	tx, err := s.db.Conn().Begin()
-	if err == nil {
-		_, err = tx.Exec(`
-			UPDATE recordings SET status = ?, chunk_count = 0, byte_size = 0,
-				error_message = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-			WHERE id = ? AND owner = ? AND status = ?`,
-			StatusFailed, "recording interrupted before completion", item.ID, strings.TrimSpace(owner), StatusRecording)
-	}
-	if err == nil {
-		_, err = tx.Exec(`DELETE FROM recording_messages WHERE recording_id = ?`, item.ID)
-	}
-	if err == nil {
-		_, err = tx.Exec(`
-			INSERT INTO recording_messages (recording_id, client_id, role, content, created_at, updated_at)
-			SELECT ?, client_id, role, substr(content, 1, ?), created_at, updated_at
-			FROM (
-				SELECT id, client_id, role, content, created_at, updated_at
-				FROM conversation_messages
-				WHERE conversation_id = ?
-				ORDER BY id DESC
-				LIMIT ?
-			) recent
-			ORDER BY id`, item.ID, MaxSnapshotContentChars, item.ConversationID, MaxSnapshotMessages)
-	}
-	if err == nil {
-		err = tx.Commit()
-	} else if tx != nil {
-		_ = tx.Rollback()
-	}
-	s.db.Unlock()
+	_, err = s.Complete(owner, id, CompleteInput{
+		ChunkCount:   chunkCount,
+		Failed:       true,
+		ErrorMessage: "recording interrupted before completion",
+	})
 	if err != nil {
-		return fmt.Errorf("mark interrupted recording failed: %w", err)
+		return fmt.Errorf("finalize interrupted recording: %w", err)
 	}
-	if err := os.RemoveAll(s.chunkDir(item.ID)); err != nil {
-		return fmt.Errorf("remove interrupted recording chunks: %w", err)
-	}
-	_ = os.Remove(s.audioPath(item.ID, item.FileExt))
-	s.invalidateStats()
 	return nil
+}
+
+func (s *Store) interruptedChunkCount(id string) (int, error) {
+	entries, err := os.ReadDir(s.chunkDir(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("list interrupted recording chunks: %w", err)
+	}
+	highest := -1
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".part") {
+			continue
+		}
+		sequence, parseErr := strconv.Atoi(strings.TrimSuffix(entry.Name(), ".part"))
+		if parseErr == nil && sequence >= 0 && sequence < MaxRecordingChunks && sequence > highest {
+			highest = sequence
+		}
+	}
+	return highest + 1, nil
 }
 
 func (s *Store) cleanupTemporaryFiles() error {

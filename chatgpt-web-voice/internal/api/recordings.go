@@ -265,8 +265,6 @@ func writeRecordingError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, recordings.ErrCapacity):
 		w.Header().Set("Retry-After", "30")
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"detail": map[string]any{"error": "recording capacity is temporarily full"}})
-	case errors.Is(err, recordings.ErrSessionAlreadyRecorded):
-		writeJSON(w, http.StatusConflict, map[string]any{"detail": map[string]any{"error": "call session already has a recording"}})
 	case errors.Is(err, recordings.ErrStorageFull):
 		writeJSON(w, http.StatusInsufficientStorage, map[string]any{"detail": map[string]any{"error": "recording storage is temporarily unavailable"}})
 	default:

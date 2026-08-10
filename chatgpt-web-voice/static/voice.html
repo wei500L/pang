@@ -403,6 +403,18 @@
       white-space: nowrap;
       text-overflow: ellipsis;
     }
+    body.app-shell .session-item-mode {
+      display: inline-flex;
+      width: fit-content;
+      margin-top: 5px;
+      padding: 2px 6px;
+      border: 1px solid var(--app-line);
+      border-radius: 999px;
+      color: var(--app-dim);
+      font-size: 9px;
+      font-weight: 650;
+      line-height: 1.2;
+    }
     body.app-shell .session-item-preview {
       display: block;
       overflow: hidden;
@@ -1681,6 +1693,39 @@
     body.app-shell .welcome-state h1,
     body.app-shell .agent-visual-layer.is-ready + .chat-stage .welcome-state h1 { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--app-ink); font-size: clamp(26px, 3.2vw, 42px); font-weight: 520; line-height: 1.12; letter-spacing: -.055em; backdrop-filter: none; }
     body.app-shell .welcome-copy > p { max-width: 520px; margin: 10px auto 0; color: var(--app-muted); font-size: 12.5px; line-height: 1.55; }
+    body.app-shell .conversation-mode-switch {
+      position: relative;
+      z-index: 4;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-bottom: 14px;
+      padding: 3px;
+      border: 1px solid var(--app-line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .025);
+      pointer-events: auto;
+    }
+    body.app-shell .conversation-mode-switch button {
+      min-width: 76px;
+      min-height: 30px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 999px;
+      color: var(--app-dim);
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 650;
+      transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    body.app-shell .conversation-mode-switch button:hover { color: var(--app-ink); }
+    body.app-shell .conversation-mode-switch button.active {
+      color: var(--app-ink);
+      background: var(--app-hover-strong);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .08);
+    }
+    body.app-shell .conversation-mode-switch button:disabled { cursor: default; opacity: .65; }
     body.app-shell .welcome-capabilities { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     body.app-shell .welcome-capabilities span { padding: 6px 10px; border: 1px solid var(--app-line); border-radius: 999px; color: var(--app-dim); background: rgba(255, 255, 255, .02); font-size: 10px; font-weight: 600; }
     body.app-shell .transcript-head { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
@@ -1821,6 +1866,10 @@
           <div id="welcomeState" class="welcome-state">
             <div class="welcome-copy">
               <div class="welcome-kicker"><span data-i18n="welcomeKicker">自由 · 爱的对话空间</span></div>
+              <div id="conversationModeSwitch" class="conversation-mode-switch" role="group" data-i18n-aria="modeAria" aria-label="对话类型">
+                <button type="button" data-conversation-mode="personal" class="active" aria-pressed="true" data-i18n="modePersonal">个人</button>
+                <button type="button" data-conversation-mode="organization" aria-pressed="false" data-i18n="modeOrganization">组织</button>
+              </div>
               <h1 data-i18n="welcomeTitle">和自由·爱，<br />聊一聊生活</h1>
               <span class="welcome-rule" aria-hidden="true"></span>
               <p data-i18n="welcomeDescription">最近有什么事情，<br />让你觉得生活有点不舒服？</p>
@@ -2039,6 +2088,7 @@
   var deleteConversationMessage = document.getElementById('deleteConversationMessage');
   var sessionTitle = document.getElementById('sessionTitle');
   var welcomeState = document.getElementById('welcomeState');
+  var conversationModeSwitch = document.getElementById('conversationModeSwitch');
   var btnNewSession = document.getElementById('btnNewSession');
   var btnOpenSessions = document.getElementById('btnOpenSessions');
   var btnCloseSessions = document.getElementById('btnCloseSessions');
@@ -2056,6 +2106,8 @@
   var previewTimer = 0;
   var previewStarting = false;
   var localStream = null;
+  var textOnlySession = false;
+  var silentMicSource = null;
   var remoteStream = null;
   var microphoneRecording = null;
   var recordingPendingBytes = 0;
@@ -2076,6 +2128,7 @@
   var remoteElementMutedForGraph = false;
   var localRaf = 0, remoteRaf = 0;
   var starting = false;
+  var callStartController = null;
   var stoppingCall = false;
   var disconnectWatchTimer = 0;
   var inCall = false;
@@ -2181,7 +2234,17 @@
   var suppressPreviewAssistantUntil = 0;
   var micPermissionWarmed = false;
   var systemPromptSent = false;
-  var systemPromptText = null;
+  var systemPromptCache = Object.create(null);
+  var systemPromptLoadPromise = Object.create(null);
+  var contextInitializationPromise = null;
+  var contextReady = false;
+  var ignoredPromptMessageIds = new Set();
+  var conversationMode = 'personal';
+  var promptVersions = { personal: 'personal-v1.1', organization: 'organization-v1.1' };
+  var promptPaths = {
+    personal: '/static/pangdonglai-system-prompt.txt',
+    organization: '/static/pangdonglai-system-prompt-enterprise.txt'
+  };
 
 
   var uiLocaleStorageKey = 'chatgpt_web_voice_ui_locale_v1';
@@ -2244,8 +2307,13 @@
       roomLabel: 'VOICE ROOM',
       roomPrivacy: 'PRIVATE',
       welcomeKicker: '自由 · 爱的对话空间',
+      modeAria: '对话类型',
+      modePersonal: '个人',
+      modeOrganization: '组织',
       welcomeTitle: '和自由·爱，\n聊一聊生活',
       welcomeDescription: '最近有什么事情，\n让你觉得生活有点不舒服？',
+      welcomeTitleOrganization: '和自由·爱，\n重新看见组织',
+      welcomeDescriptionOrganization: '最近团队里有什么事情，\n让你觉得很难处理？',
       capabilityRealtime: '工作与节奏',
       capabilityInterrupt: '关系与边界',
       capabilityTranscript: '生活与自己',
@@ -2305,6 +2373,7 @@
       roleUser: '用户',
       roleAssistant: '助手',
       toastSessionBusy: '通话进行中，结束后再切换会话',
+      toastModeChanged: '已切换到{mode}对话',
       toastSensitivityInCall: '灵敏度已调整，正在重新校准环境声音',
       toastSensitivity: '已调整自动打断灵敏度',
       toastUnlockAudio: '已尝试解锁声音',
@@ -2315,6 +2384,7 @@
       toastNeedContent: '请输入文本',
       toastTextSent: '文本已发送到语音会话',
       toastVirtualMic: '当前是虚拟麦克风，可能无法被识别，请换成真实麦克风',
+      toastTextOnlySession: '已进入仅文字模式，不会采集或保存麦克风音频',
       toastClickSpeaker: '点击扬声器按钮打开声音',
       toastConnFail: '连接失败',
       toastPreviewClick: '如果没有声音，请点一次页面后再切换音色试听',
@@ -2420,8 +2490,13 @@
       roomLabel: 'VOICE ROOM',
       roomPrivacy: 'PRIVATE',
       welcomeKicker: 'A space for freedom and love',
+      modeAria: 'Conversation type',
+      modePersonal: 'Personal',
+      modeOrganization: 'Organization',
       welcomeTitle: 'Talk with freedom and love\nabout everyday life',
       welcomeDescription: 'What has been making life\nfeel a little uncomfortable lately?',
+      welcomeTitleOrganization: 'See the organization again\nthrough freedom and love',
+      welcomeDescriptionOrganization: 'What team situation has been\nhard to handle lately?',
       capabilityRealtime: 'Work & rhythm',
       capabilityInterrupt: 'Relationships & boundaries',
       capabilityTranscript: 'Life & self',
@@ -2481,6 +2556,7 @@
       roleUser: 'User',
       roleAssistant: 'Assistant',
       toastSessionBusy: 'End the active call before switching chats',
+      toastModeChanged: 'Switched to {mode} conversation',
       toastSensitivityInCall: 'Sensitivity updated — recalibrating ambient sound',
       toastSensitivity: 'Barge-in sensitivity updated',
       toastUnlockAudio: 'Tried to unlock audio',
@@ -2491,6 +2567,7 @@
       toastNeedContent: 'Enter text',
       toastTextSent: 'Text sent to the voice session',
       toastVirtualMic: 'This looks like a virtual mic and may not work — switch to a real one',
+      toastTextOnlySession: 'Text-only mode is active; microphone audio is not captured or saved',
       toastClickSpeaker: 'Tap the speaker button to turn sound on',
       toastConnFail: 'Connection failed',
       toastPreviewClick: 'If you hear nothing, click the page once and preview again',
@@ -2649,6 +2726,7 @@
       if (key) el.setAttribute('aria-label', t(key));
     });
     updateLocaleThemeButtons();
+    updateConversationModeUI();
   }
 
   function fillVoiceOptions() {
@@ -2893,6 +2971,7 @@
     }
     btnMute.setAttribute('title', muted ? t('unmute') : t('mute'));
     updatePlaybackVolumeLabel();
+    updateConversationModeUI();
   }
 
   function setUiLocale(locale, announce) {
@@ -2910,6 +2989,32 @@
     if (text.length <= limit) return text;
     if (limit <= 3) return text.slice(0, Math.max(0, limit));
     return text.slice(0, limit - 3) + '...';
+  }
+
+  function normalizeConversationMode(mode) {
+    return String(mode || '').toLowerCase() === 'organization' || String(mode || '').toLowerCase() === 'enterprise' ? 'organization' : 'personal';
+  }
+
+  function conversationModeLabel(mode) {
+    return t(normalizeConversationMode(mode) === 'organization' ? 'modeOrganization' : 'modePersonal');
+  }
+
+  function updateConversationModeUI() {
+    var mode = normalizeConversationMode(conversationMode);
+    if (conversationModeSwitch) {
+      conversationModeSwitch.querySelectorAll('[data-conversation-mode]').forEach(function (button) {
+        var active = button.getAttribute('data-conversation-mode') === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        button.disabled = !!(inCall || starting || stoppingCall);
+      });
+    }
+    if (!welcomeState) return;
+    var title = welcomeState.querySelector('h1');
+    var description = welcomeState.querySelector('.welcome-copy > p');
+    if (title) title.textContent = t(mode === 'organization' ? 'welcomeTitleOrganization' : 'welcomeTitle');
+    if (description) description.textContent = t(mode === 'organization' ? 'welcomeDescriptionOrganization' : 'welcomeDescription');
+    document.body.setAttribute('data-conversation-mode', mode);
   }
 
   function newClientMessageId() {
@@ -2949,6 +3054,9 @@
       preview: clampText(item.preview || (last && last.content) || '', 240),
       createdAt: timestampMillis(item.created_at || item.createdAt),
       updatedAt: timestampMillis(item.updated_at || item.updatedAt || item.created_at || item.createdAt),
+      mode: normalizeConversationMode(item.mode),
+      promptVersion: String(item.prompt_version || item.promptVersion || '').trim(),
+      promptInjectedFor: String(item.prompt_injected_for || item.promptInjectedFor || '').trim(),
       // chatgpt.com continuity — used to resume the same upstream thread after reconnect.
       accountId: Number(item.account_id || item.accountId || 0) || 0,
       upstreamConversationId: String(item.upstream_conversation_id || item.upstreamConversationId || '').trim(),
@@ -2967,6 +3075,35 @@
     voiceSessionId = (session && session.gatewayVoiceSessionId) || '';
     upstreamVoiceSessionId = (session && session.upstreamVoiceSessionId) || '';
     stickyAccountId = (session && session.accountId) ? Number(session.accountId) || 0 : 0;
+    conversationMode = normalizeConversationMode(session && session.mode);
+    systemPromptSent = !!(
+      session &&
+      session.promptInjectedFor &&
+      session.promptVersion === promptVersions[conversationMode]
+    );
+    contextInitializationPromise = null;
+    contextReady = false;
+    updateConversationModeUI();
+  }
+
+  function clearStickyVoiceContext() {
+    voiceSessionId = '';
+    stickyAccountId = 0;
+    conversationId = '';
+    parentMessageId = '';
+    upstreamVoiceSessionId = '';
+    var active = getActiveConversationSession();
+    if (active) {
+      active.accountId = 0;
+      active.upstreamConversationId = '';
+      active.upstreamParentMessageId = '';
+      active.upstreamVoiceSessionId = '';
+      active.gatewayVoiceSessionId = '';
+      active.promptInjectedFor = '';
+    }
+    systemPromptSent = false;
+    contextReady = false;
+    contextInitializationPromise = null;
   }
 
   function schedulePersistUpstreamContext() {
@@ -2995,7 +3132,10 @@
       upstream_conversation_id: conversationId || '',
       upstream_parent_message_id: parentMessageId || '',
       upstream_voice_session_id: upstreamVoiceSessionId || '',
-      gateway_voice_session_id: voiceSessionId || ''
+      gateway_voice_session_id: voiceSessionId || '',
+      mode: active ? normalizeConversationMode(active.mode) : conversationMode,
+      prompt_version: active ? String(active.promptVersion || '') : '',
+      prompt_injected_for: active ? String(active.promptInjectedFor || '') : ''
     };
     await conversationRequest('/api/conversations/' + encodeURIComponent(activeSessionId), {
       method: 'PATCH',
@@ -3158,7 +3298,7 @@
       var legacySession = sessions[sessionIndex];
       var created = await conversationRequest('/api/conversations', {
         method: 'POST',
-        body: JSON.stringify({ title: legacySession.title || '' })
+        body: JSON.stringify({ title: legacySession.title || '', mode: legacySession.mode || 'personal' })
       });
       var conversationID = created.conversation && created.conversation.id;
       if (!conversationID) throw new Error(t('conversationSaveFailed'));
@@ -3284,6 +3424,9 @@
       var title = document.createElement('span');
       title.className = 'session-item-title';
       title.textContent = session.title || t('sessionNew');
+      var mode = document.createElement('span');
+      mode.className = 'session-item-mode';
+      mode.textContent = conversationModeLabel(session.mode);
       var preview = document.createElement('span');
       preview.className = 'session-item-preview';
       preview.textContent = session.preview || '';
@@ -3291,6 +3434,7 @@
       time.className = 'session-item-time';
       time.textContent = formatSessionTime(session.updatedAt);
       button.appendChild(title);
+      button.appendChild(mode);
       if (session.preview) button.appendChild(preview);
       button.appendChild(time);
       sessionList.appendChild(button);
@@ -3534,17 +3678,17 @@
 
   // Local conversation ids (cv_...) only come from POST /api/conversations.
   // Never invent client-side ids; message/title persistence requires this row.
-  async function createLocalConversationOnServer(title) {
+  async function createLocalConversationOnServer(title, mode) {
     var data = await conversationRequest('/api/conversations', {
       method: 'POST',
-      body: JSON.stringify({ title: title || '' })
+      body: JSON.stringify({ title: title || '', mode: normalizeConversationMode(mode || conversationMode) })
     });
     var session = normalizeStoredSession(data.conversation || {});
     if (!session || !session.id) throw new Error(t('conversationSaveFailed'));
     return session;
   }
 
-  async function createConversationSession() {
+  async function createConversationSession(mode) {
     await waitForConversationStore();
     await flushPendingConversationWrites();
     // New local chat must not reuse the previous chatgpt.com conversation.
@@ -3555,7 +3699,10 @@
     stickyAccountId = 0;
     upstreamTitleAppliedFor = '';
     titleLocked = false;
-    var session = await createLocalConversationOnServer('');
+    systemPromptSent = false;
+    contextReady = false;
+    contextInitializationPromise = null;
+    var session = await createLocalConversationOnServer('', mode || conversationMode);
     conversationSessions.unshift(session);
     activeSessionId = session.id;
     currentSessionHistory = [];
@@ -3567,6 +3714,50 @@
     renderTranscript();
     log('local conversation created', session.id);
     return session;
+  }
+
+  function conversationHasStarted(session) {
+    return !!(
+      (session && session.messages && session.messages.length) ||
+      (session && session.accountId) ||
+      (session && session.upstreamConversationId) ||
+      (session && session.upstreamVoiceSessionId) ||
+      (session && session.gatewayVoiceSessionId) ||
+      (session && session.promptInjectedFor)
+    );
+  }
+
+  async function selectConversationMode(mode) {
+    mode = normalizeConversationMode(mode);
+    if (inCall || starting || stoppingCall) {
+      toast(t('toastSessionBusy'));
+      return;
+    }
+    await waitForConversationStore();
+    var active = getActiveConversationSession();
+    if (active && normalizeConversationMode(active.mode) === mode) {
+      conversationMode = mode;
+      updateConversationModeUI();
+      preloadSystemPrompt(mode).catch(function () {});
+      return;
+    }
+    if (!active || conversationHasStarted(active)) {
+      await createConversationSession(mode);
+    } else {
+      var data = await conversationRequest('/api/conversations/' + encodeURIComponent(active.id), {
+        method: 'PATCH',
+        body: JSON.stringify({ mode: mode, prompt_version: '', prompt_injected_for: '' })
+      });
+      var updated = normalizeStoredSession(data.conversation || {});
+      if (!updated) throw new Error(t('conversationSaveFailed'));
+      var index = conversationSessions.findIndex(function (item) { return item.id === updated.id; });
+      if (index >= 0) conversationSessions[index] = updated;
+      applyUpstreamContextFromSession(updated);
+      renderSessionList();
+      renderTranscript();
+    }
+    preloadSystemPrompt(mode).catch(function () {});
+    toast(t('toastModeChanged', { mode: conversationModeLabel(mode) }));
   }
 
   async function activateConversationSession(id) {
@@ -3689,12 +3880,17 @@
   }
 
   async function flushPendingConversationWrites() {
-    if (conversationWriteTimer) {
-      clearTimeout(conversationWriteTimer);
-      conversationWriteTimer = 0;
+    var passes = 0;
+    while (passes < 5) {
+      passes++;
+      if (conversationWriteTimer) {
+        clearTimeout(conversationWriteTimer);
+        conversationWriteTimer = 0;
+      }
+      if (conversationWriteInFlight) await conversationWriteChain.catch(function () {});
+      if (!conversationPendingWrites.size) return;
+      await drainPendingConversationWrites().catch(function () {});
     }
-    if (conversationWriteInFlight) await conversationWriteChain.catch(function () {});
-    if (conversationPendingWrites.size) await drainPendingConversationWrites().catch(function () {});
   }
 
   function persistConversationMessage(message) {
@@ -3997,7 +4193,7 @@
   // SDP may succeed before ICE/DataChannel finish. Treat the call as "live" for
   // hangup, but only unlock the text composer when the realtime channel is open.
   function isComposerReady() {
-    return !!inCall && isDataChannelReady() && !sending;
+    return !!inCall && isDataChannelReady() && contextReady && !sending;
   }
 
   function markCallLive(uiState, titleKey, subKey) {
@@ -4009,6 +4205,7 @@
   }
 
   function updateCallControls() {
+    updateConversationModeUI();
     // Transitional UI: connecting (start) and ending (hangup post-work) both lock the main button.
     var ending = !!stoppingCall;
     // Keep "connecting" while SDP is in flight OR after SDP until the DataChannel opens.
@@ -4034,10 +4231,11 @@
         btnMain.setAttribute('title', t('statusConnecting'));
         btnMain.disabled = true;
       } else if (connecting && !inCall) {
-        // Pre-SDP: cannot hang up yet (startCall still owns the flow).
-        btnMain.textContent = t('statusConnecting');
-        btnMain.setAttribute('title', t('statusConnecting'));
-        btnMain.disabled = true;
+        // Pre-SDP: allow cancellation so the microphone is released immediately.
+        btnMain.textContent = t('end');
+        btnMain.setAttribute('title', t('end'));
+        btnMain.disabled = false;
+        btnMain.classList.toggle('stop', true);
       } else if (inCall) {
         // After SDP: always allow hangup. Status text may still say "连接中"
         // until the DataChannel opens; the composer stays locked separately.
@@ -4494,48 +4692,100 @@
     }
   }
 
-  function sendSystemPrompt() {
-    if (systemPromptSent || !inCall || !dcChannel || dcChannel.readyState !== 'open') return;
-    systemPromptSent = true;
-    if (systemPromptText) {
-      try {
-        var msg = buildBaseUserMessage({ content_type: 'text', parts: [systemPromptText] });
-        msg.metadata.system_hints = { system_prompt: true };
-        sendRelayMessage(msg);
-        log('system prompt sent', msg.id);
-      } catch (e) {
-        log('system prompt send fail', String(e));
-        systemPromptSent = false;
-      }
-      return;
+  function preloadSystemPrompt(mode) {
+    mode = normalizeConversationMode(mode);
+    if (systemPromptCache[mode]) return Promise.resolve(systemPromptCache[mode]);
+    if (systemPromptLoadPromise[mode]) return systemPromptLoadPromise[mode];
+    systemPromptLoadPromise[mode] = fetch(promptPaths[mode])
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.text();
+      })
+      .then(function (text) {
+        text = String(text || '').trim();
+        if (!text) throw new Error('empty system prompt');
+        systemPromptCache[mode] = text;
+        return text;
+      })
+      .finally(function () {
+        systemPromptLoadPromise[mode] = null;
+      });
+    return systemPromptLoadPromise[mode];
+  }
+
+  function setContextReady(ready) {
+    contextReady = !!ready;
+    if (localStream) {
+      localStream.getAudioTracks().forEach(function (track) {
+        track.enabled = contextReady && !muted;
+      });
     }
+    updateCallControls();
+    updateComposerState();
+  }
+
+  async function persistPromptInitialization(messageID) {
+    var active = getActiveConversationSession();
+    if (!active || !activeSessionId) return;
+    var marker = conversationId || upstreamVoiceSessionId || voiceSessionId || ('message:' + messageID);
+    var version = promptVersions[conversationMode];
+    active.mode = conversationMode;
+    active.promptVersion = version;
+    active.promptInjectedFor = marker;
+    await conversationRequest('/api/conversations/' + encodeURIComponent(activeSessionId), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        mode: conversationMode,
+        prompt_version: version,
+        prompt_injected_for: marker,
+        upstream_parent_message_id: parentMessageId || ''
+      })
+    });
+  }
+
+  async function sendSystemPrompt() {
+    if (!inCall || !dcChannel || dcChannel.readyState !== 'open') throw new Error(t('errDcNotReady'));
+    if (systemPromptSent) return false;
+    var text = await preloadSystemPrompt(conversationMode);
+    var message = buildBaseUserMessage({ content_type: 'text', parts: [text] });
+    message.metadata.system_hints = {
+      system_prompt: true,
+      prompt_mode: conversationMode,
+      prompt_version: promptVersions[conversationMode]
+    };
+    ignoredPromptMessageIds.add(message.id);
+    sendRelayMessage(message);
+    parentMessageId = message.id;
+    systemPromptSent = true;
+    await persistPromptInitialization(message.id);
+    await new Promise(function (resolve) { setTimeout(resolve, 900); });
+    log('system prompt sent', conversationMode, promptVersions[conversationMode], message.id);
+    return true;
+  }
+
+  async function initializeVoiceContext() {
+    if (contextReady) return;
     try {
-      fetch('/static/pangdonglai-system-prompt.txt')
-        .then(function (res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.text();
-        })
-        .then(function (text) {
-          systemPromptText = text;
-          if (!inCall || !dcChannel || dcChannel.readyState !== 'open') return;
-          var msg = buildBaseUserMessage({ content_type: 'text', parts: [text] });
-          msg.metadata.system_hints = { system_prompt: true };
-          sendRelayMessage(msg);
-          log('system prompt sent', msg.id);
-        })
-        .catch(function (e) {
-          log('system prompt fetch fail', String(e));
-          systemPromptSent = false;
-        });
-    } catch (e) {
-      log('system prompt fetch error', String(e));
+      await sendSystemPrompt();
+      setContextReady(true);
+      sendVoicePreviewGreeting();
+      if (inCall) setUIKey('listening', 'statusListening', 'subConnected');
+    } catch (error) {
       systemPromptSent = false;
+      setContextReady(false);
+      log('system prompt initialization fail', String(error && error.message || error));
+      setUI('error', t('statusStartFail'), String(error && error.message || error), 'statusStartFail', '', null, null);
+      await stopCall(false);
     }
   }
 
   function onVoiceChannelReady() {
-    sendSystemPrompt();
-    sendVoicePreviewGreeting();
+    if (!inCall || !isDataChannelReady()) return;
+    if (contextReady) return;
+    if (contextInitializationPromise) return;
+    contextInitializationPromise = initializeVoiceContext().finally(function () {
+      contextInitializationPromise = null;
+    });
   }
 
   async function warmMicPermission() {
@@ -4805,11 +5055,12 @@
       streamingCaptionRole = nextCaption.role;
       streamingCaptionMessageId = nextCaption.messageId;
       streamingCaptionText = nextCaption.text;
+      var suppressPromptEcho = nextCaption.role === 'user' && ignoredPromptMessageIds.has(String(nextCaption.messageId || ''));
       if (nextCaption.role && nextCaption.text && (
         nextCaption.role !== priorCaptionRole ||
         nextCaption.messageId !== priorCaptionMessageId ||
         nextCaption.text !== priorCaptionText
-      )) {
+      ) && !suppressPromptEcho) {
         rememberDcText(nextCaption.role, nextCaption.text);
       }
       updateComposerState();
@@ -5102,6 +5353,23 @@
   }
 
   async function requestMic() {
+    var textOnlyRequested = false;
+    try { textOnlyRequested = new URLSearchParams(window.location.search).get('text_only') === '1'; } catch (e) {}
+    if (textOnlyRequested) {
+      await ensureCtx();
+      var destination = audioCtx.createMediaStreamDestination();
+      var oscillator = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+      silentMicSource = oscillator;
+      textOnlySession = true;
+      toast(t('toastTextOnlySession'));
+      return destination.stream;
+    }
+    textOnlySession = false;
     if (!window.isSecureContext) {
       throw new Error(t('errInsecure'));
     }
@@ -5266,7 +5534,8 @@
         error_message: state.errorMessage || ''
       });
       var response = null;
-      for (var attempt = 0; attempt < 2; attempt++) {
+      var completionError = null;
+      for (var attempt = 0; attempt < 4; attempt++) {
         try {
           response = await recordingFetch('/api/recordings/' + encodeURIComponent(state.id) + '/complete', {
             method: 'POST',
@@ -5275,14 +5544,24 @@
             keepalive: true
           });
           if (response.ok) break;
+          var responseData = {};
+          try { responseData = await response.json(); } catch (e) {}
+          completionError = new Error(recordingResponseError(response, responseData));
+          completionError.retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+          completionError.retryAfterMs = Math.max(0, Number(response.headers.get('Retry-After') || 0) * 1000);
+          if (!completionError.retryable) break;
         } catch (completeError) {
-          if (attempt === 1) throw completeError;
+          completionError = completeError;
+        }
+        if (attempt < 3) {
+          await new Promise(function (resolve) {
+            var retryAfter = Number(completionError && completionError.retryAfterMs || 0);
+            setTimeout(resolve, Math.max(retryAfter, 500 * Math.pow(2, attempt)));
+          });
         }
       }
       if (!response || !response.ok) {
-        var data = {};
-        try { data = response ? await response.json() : {}; } catch (e) {}
-        throw new Error(response ? recordingResponseError(response, data) : 'recording completion failed');
+        throw completionError || new Error('recording completion failed');
       }
       log('microphone recording completed', state.id, 'chunks=' + state.sequence);
     } catch (error) {
@@ -5295,11 +5574,7 @@
   }
 
   async function startMicrophoneRecording() {
-    if (microphoneRecording || !inCall || !localStream || !activeSessionId || !voiceSessionId) return;
-    if (recordingFinalizingStates.length) {
-      log('microphone recording skipped while previous recording finalizes');
-      return;
-    }
+    if (textOnlySession || microphoneRecording || !inCall || !localStream || !activeSessionId || !voiceSessionId) return;
     var stream = localStream;
     var mimeType = preferredRecordingMimeType() || 'audio/webm';
     try {
@@ -5444,6 +5719,8 @@
   async function startCall() {
     if (starting || stoppingCall || inCall) return;
     starting = true;
+    var startController = window.AbortController ? new AbortController() : null;
+    callStartController = startController;
     try {
       // A new live call always wins over best-effort uploads left by the
       // previous call. Aborting those chunk requests prevents background TCP
@@ -5456,9 +5733,12 @@
       setUIKey('connecting', 'statusConnecting', 'subMic');
       await stopCall(false);
       await prepareCallSession();
+      await preloadSystemPrompt(conversationMode);
+      setContextReady(false);
       updateTranscriptMeta();
 
       localStream = await requestMic();
+      localStream.getAudioTracks().forEach(function (track) { track.enabled = false; });
       setUIKey('connecting', 'statusConnecting', 'subEstablishing');
 
       pc = newVoicePeerConnection();
@@ -5590,41 +5870,56 @@
         };
       });
 
-      var resp = await gatewayFetch('/api/voice/session', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          offer_sdp: pc.localDescription.sdp,
-          voice: normalizeVoice(voiceEl.value),
-          voice_mode: (document.getElementById('voiceMode').value || gatewayVoiceDefaults.voice_mode).trim(),
-          language_code: normalizeLanguage(languageEl && languageEl.value),
-          voice_session_id: voiceSessionId || '',
-          account_id: stickyAccountId || 0,
-          upstream_conversation_id: conversationId || '',
-          upstream_parent_message_id: parentMessageId || '',
-          upstream_voice_session_id: upstreamVoiceSessionId || ''
-        })
-      });
+      function requestVoiceSession() {
+        return gatewayFetch('/api/voice/session', {
+          method: 'POST',
+          signal: startController ? startController.signal : undefined,
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            offer_sdp: pc.localDescription.sdp,
+            voice: normalizeVoice(voiceEl.value),
+            voice_mode: (document.getElementById('voiceMode').value || gatewayVoiceDefaults.voice_mode).trim(),
+            language_code: normalizeLanguage(languageEl && languageEl.value),
+            voice_session_id: voiceSessionId || '',
+            account_id: stickyAccountId || 0,
+            upstream_conversation_id: conversationId || '',
+            upstream_parent_message_id: parentMessageId || '',
+            upstream_voice_session_id: upstreamVoiceSessionId || ''
+          })
+        });
+      }
+      var resp = await requestVoiceSession();
       var data = {};
       try { data = await resp.json(); } catch (e) {}
+      if (!resp.ok && (resp.status === 401 || resp.status === 503)) {
+        var stickyError = (data && data.detail && (data.detail.error || JSON.stringify(data.detail))) || '';
+        if (String(stickyError).indexOf('preferred account') >= 0 || String(stickyError).indexOf('bound account') >= 0 || String(stickyError).indexOf('unavailable') >= 0) {
+          // The old account can no longer resume this upstream thread. Start a
+          // fresh upstream thread on an available account in the same click.
+          clearStickyVoiceContext();
+          persistUpstreamContextNow().catch(function () {});
+          log('retrying voice session without stale account binding');
+          resp = await requestVoiceSession();
+          data = {};
+          try { data = await resp.json(); } catch (e) {}
+        }
+      }
       if (!resp.ok) {
         var msg = (data && data.detail && (data.detail.error || JSON.stringify(data.detail))) || ('HTTP ' + resp.status);
         // Stale gateway binding / expired resume ids: drop sticky fields and let the user retry.
         if (resp.status === 404 || resp.status === 403) {
           voiceSessionId = '';
+          var active = getActiveConversationSession();
+          if (active) active.gatewayVoiceSessionId = '';
           schedulePersistUpstreamContext();
         }
         // Bound account gone or disabled: clear sticky account so user can start a new thread.
         if (resp.status === 401 || resp.status === 503) {
-          if (stickyAccountId > 0 && (String(msg).indexOf('preferred account') >= 0 || String(msg).indexOf('bound account') >= 0 || String(msg).indexOf('unavailable') >= 0)) {
-            stickyAccountId = 0;
-            voiceSessionId = '';
-            conversationId = '';
-            parentMessageId = '';
-            upstreamVoiceSessionId = '';
-            schedulePersistUpstreamContext();
+          if (String(msg).indexOf('preferred account') >= 0 || String(msg).indexOf('bound account') >= 0 || String(msg).indexOf('unavailable') >= 0) {
+            clearStickyVoiceContext();
+            persistUpstreamContextNow().catch(function () {});
           }
         }
         setUI('error', t('statusStartFail'), msg, 'statusStartFail', '', null, null);
@@ -5655,11 +5950,17 @@
       });
       setTimeout(onVoiceChannelReady, 700);
     } catch (e) {
+      if (e && e.name === 'AbortError') {
+        log('start cancelled');
+        await stopCall(false);
+        return;
+      }
       log('start error', String(e));
       setUI('error', t('statusStartFail'), String(e.message || e), 'statusStartFail', '', null, null);
       toast(String(e.message || e));
       await stopCall(false);
     } finally {
+      if (callStartController === startController) callStartController = null;
       starting = false;
       updateCallControls();
       updateComposerState();
@@ -5714,6 +6015,10 @@
     updateCallControls();
     try {
       finishMicrophoneRecording(updateText ? 'hangup' : 'transport_end');
+      if (upstreamContextPersistTimer) {
+        clearTimeout(upstreamContextPersistTimer);
+        upstreamContextPersistTimer = 0;
+      }
       clearInterval(0);
       if (localRaf) cancelAnimationFrame(localRaf);
       if (remoteRaf) cancelAnimationFrame(remoteRaf);
@@ -5730,6 +6035,12 @@
         localStream.getTracks().forEach(function (t) { t.stop(); });
         localStream = null;
       }
+      if (silentMicSource) {
+        try { silentMicSource.stop(); } catch (e) {}
+        try { silentMicSource.disconnect(); } catch (e) {}
+        silentMicSource = null;
+      }
+      textOnlySession = false;
       remoteStream = null;
       disconnectRemotePlaybackGraph();
       remoteAudio.srcObject = null;
@@ -5753,6 +6064,8 @@
       autoInterruptAmbientRms = 0;
       awaitingInterruptAck = false;
       playbackSuppressed = false;
+      contextReady = false;
+      contextInitializationPromise = null;
       streamingCaptionRole = '';
       streamingCaptionText = '';
       streamingCaptionMessageId = '';
@@ -5846,6 +6159,13 @@
       } catch (error) {
         toast(t('conversationSaveFailed') + ': ' + error.message);
       }
+    };
+    if (conversationModeSwitch) conversationModeSwitch.onclick = function (event) {
+      var button = event.target.closest('[data-conversation-mode]');
+      if (!button) return;
+      selectConversationMode(button.getAttribute('data-conversation-mode')).catch(function (error) {
+        toast(t('conversationSaveFailed') + ': ' + error.message);
+      });
     };
     if (sessionList) sessionList.onclick = function (event) {
       var item = event.target.closest('[data-session-id]');
@@ -5988,9 +6308,13 @@
     }
 
     btnMain.onclick = function () {
-      // connecting / ending: button is disabled; still no-op if a click races through.
-      if (stoppingCall || starting) return;
-      if (inCall) stopCall(true);
+      if (stoppingCall) return;
+      if (starting && !inCall) {
+        if (callStartController) {
+          try { callStartController.abort(); } catch (e) {}
+        }
+        stopCall(true);
+      } else if (inCall) stopCall(true);
       else startCall();
     };
     btnMute.onclick = toggleMute;
@@ -6064,6 +6388,9 @@
     setUIKey('idle', 'statusReady', 'subReady');
     updateComposerState();
     initializeConversationStore().catch(function () {});
+    preloadSystemPrompt('personal').catch(function (error) {
+      log('personal prompt preload fail', String(error && error.message || error));
+    });
     loadAuthSession().catch(function () {});
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
       refreshMics().catch(function () {});

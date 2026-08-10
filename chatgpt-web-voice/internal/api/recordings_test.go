@@ -193,7 +193,7 @@ func TestRecordingCreationRequiresOwnedActiveCallSession(t *testing.T) {
 		"voice_session_id": "vs_owned",
 		"mime_type":        "audio/webm",
 	})
-	if duplicate.Code != http.StatusConflict {
-		t.Fatalf("duplicate status=%d body=%s", duplicate.Code, duplicate.Body.String())
+	if duplicate.Code != http.StatusCreated {
+		t.Fatalf("second call recording status=%d body=%s", duplicate.Code, duplicate.Body.String())
 	}
 }

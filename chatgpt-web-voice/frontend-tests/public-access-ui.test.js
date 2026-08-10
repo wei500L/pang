@@ -26,6 +26,31 @@ test("voice page prioritizes visual assets without warming the microphone on loa
   assert.match(voiceHTML, /if \(languageMenuNeedsRender\) renderLanguageMenuOptions\(\)/);
 });
 
+test("conversation mode is session-bound and prompt initialization gates user input", () => {
+  assert.match(voiceHTML, /id="conversationModeSwitch"/);
+  assert.match(voiceHTML, /\.conversation-mode-switch \{[\s\S]{0,420}pointer-events: auto/);
+  assert.match(voiceHTML, /data-conversation-mode="personal"/);
+  assert.match(voiceHTML, /data-conversation-mode="organization"/);
+  assert.match(voiceHTML, /prompt_injected_for/);
+  assert.match(voiceHTML, /prompt_mode: conversationMode/);
+  assert.match(voiceHTML, /system_prompt: true/);
+  assert.match(voiceHTML, /ignoredPromptMessageIds\.has/);
+  assert.match(voiceHTML, /conversation mode cannot change after the conversation starts|conversationHasStarted/);
+  assert.match(voiceHTML, /return !!inCall && isDataChannelReady\(\) && contextReady && !sending/);
+  assert.match(voiceHTML, /await preloadSystemPrompt\(conversationMode\);[\s\S]{0,180}localStream = await requestMic\(\)/);
+  assert.match(voiceHTML, /await sendSystemPrompt\(\);[\s\S]{0,100}setContextReady\(true\)/);
+  assert.match(voiceHTML, /function onVoiceChannelReady\(\) \{\s*if \(!inCall \|\| !isDataChannelReady\(\)\) return/);
+  assert.doesNotMatch(voiceHTML, /fetch\('\/static\/pangdonglai-system-prompt\.txt'\)[\s\S]{0,260}sendVoicePreviewGreeting\(\)/);
+});
+
+test("text-only QA mode uses a silent media track and never starts microphone recording", () => {
+  assert.match(voiceHTML, /new URLSearchParams\(window\.location\.search\)\.get\('text_only'\) === '1'/);
+  assert.match(voiceHTML, /audioCtx\.createMediaStreamDestination\(\)/);
+  assert.match(voiceHTML, /gain\.gain\.value = 0/);
+  assert.match(voiceHTML, /if \(textOnlySession \|\| microphoneRecording/);
+  assert.match(voiceHTML, /if \(silentMicSource\) \{[\s\S]{0,220}silentMicSource\.stop\(\)[\s\S]{0,220}silentMicSource = null/);
+});
+
 test("room background keeps motion while avoiding layout-driven drift", () => {
   assert.match(voiceRoomJS, /roomBackgroundImage\.decode\(\)/);
   assert.match(voiceRoomCSS, /data-room-background-state="loading"/);
@@ -61,10 +86,13 @@ test("voice page records the microphone through a bounded best-effort upload que
   assert.match(voiceHTML, /RECORDING_GLOBAL_MAX_PENDING_BYTES = 64 << 20/);
   assert.match(voiceHTML, /RECORDING_FETCH_TIMEOUT_MS = 8000/);
   assert.match(voiceHTML, /abortBackgroundRecordingUploads\('new call took priority/);
-  assert.match(voiceHTML, /recordingFinalizingStates\.length/);
+  assert.doesNotMatch(voiceHTML, /microphone recording skipped while previous recording finalizes/);
   assert.match(voiceHTML, /state\.uploadDisabled = true/);
   assert.match(voiceHTML, /startMicrophoneRecording\(\)\.catch/);
   assert.match(voiceHTML, /finishMicrophoneRecording\(updateText \? 'hangup' : 'transport_end'\)/);
+  assert.match(voiceHTML, /completionError\.retryAfterMs/);
+  assert.match(voiceHTML, /callStartController\.abort\(\)/);
+  assert.match(voiceHTML, /retrying voice session without stale account binding/);
   assert.match(voiceHTML, /Recording is strictly best-effort/);
 });
 
@@ -144,6 +172,21 @@ test("streaming updates keep only the latest payload while a write is pending", 
   assert.equal(context.persistence.pending.size, 1);
   await context.persistence.flushPendingConversationWrites();
   assert.equal(retryAttempts, 2);
+  assert.equal(context.persistence.pending.size, 0);
+
+  let repeatedFailures = 0;
+  context.conversationRequest = async () => {
+    repeatedFailures += 1;
+    if (repeatedFailures < 4) {
+      const error = new Error("temporary failure");
+      error.status = 503;
+      throw error;
+    }
+    return {};
+  };
+  context.persistence.persistConversationMessage({ clientId: "msg_multi_retry", role: "assistant", content: "Eventually saved" });
+  await context.persistence.flushPendingConversationWrites();
+  assert.equal(repeatedFailures, 4);
   assert.equal(context.persistence.pending.size, 0);
 });
 

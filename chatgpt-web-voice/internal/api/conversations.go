@@ -15,6 +15,7 @@ import (
 
 type createConversationRequest struct {
 	Title string `json:"title"`
+	Mode  string `json:"mode"`
 }
 
 type updateConversationRequest struct {
@@ -27,6 +28,9 @@ type updateConversationRequest struct {
 	UpstreamParentMessageID *string `json:"upstream_parent_message_id"`
 	UpstreamVoiceSessionID  *string `json:"upstream_voice_session_id"`
 	GatewayVoiceSessionID   *string `json:"gateway_voice_session_id"`
+	Mode                    *string `json:"mode"`
+	PromptVersion           *string `json:"prompt_version"`
+	PromptInjectedFor       *string `json:"prompt_injected_for"`
 }
 
 type conversationMessageRequest struct {
@@ -64,7 +68,7 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": map[string]any{"error": err.Error()}})
 		return
 	}
-	conversation, err := s.conversations.Create(requestOwner(r), request.Title)
+	conversation, err := s.conversations.CreateWithMode(requestOwner(r), request.Title, request.Mode)
 	if err != nil {
 		writeConversationError(w, r, err)
 		return
@@ -104,6 +108,7 @@ func (s *Server) updateConversation(w http.ResponseWriter, r *http.Request) {
 		request.UpstreamParentMessageID != nil ||
 		request.UpstreamVoiceSessionID != nil ||
 		request.GatewayVoiceSessionID != nil
+	hasPromptContext := request.Mode != nil || request.PromptVersion != nil || request.PromptInjectedFor != nil
 	title := strings.TrimSpace(request.Title)
 	hasTitle := title != "" || request.TitleLocked != nil
 
@@ -152,12 +157,27 @@ func (s *Server) updateConversation(w http.ResponseWriter, r *http.Request) {
 			GatewayVoiceSessionID:   request.GatewayVoiceSessionID,
 		})
 	default:
+		if hasPromptContext {
+			conversation, err = s.conversations.Get(owner, id)
+			break
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": map[string]any{"error": "title or upstream context is required"}})
 		return
 	}
 	if err != nil {
 		writeConversationError(w, r, err)
 		return
+	}
+	if hasPromptContext {
+		conversation, err = s.conversations.UpdatePromptContext(owner, id, conversations.PromptContextUpdate{
+			Mode:              request.Mode,
+			PromptVersion:     request.PromptVersion,
+			PromptInjectedFor: request.PromptInjectedFor,
+		})
+		if err != nil {
+			writeConversationError(w, r, err)
+			return
+		}
 	}
 	logging.FromContext(r.Context()).Info(
 		"conversation_updated",

@@ -14,6 +14,9 @@ import (
 const conversationSelectColumns = `id, owner, title,
 	COALESCE(title_locked, 0),
 	preview,
+	COALESCE(mode, 'personal'),
+	COALESCE(prompt_version, ''),
+	COALESCE(prompt_injected_for, ''),
 	COALESCE(account_id, 0),
 	COALESCE(upstream_conversation_id, ''),
 	COALESCE(upstream_parent_message_id, ''),
@@ -24,13 +27,16 @@ const conversationSelectColumns = `id, owner, title,
 // Conversation is one persisted voice/chat workspace owned by an authenticated
 // gateway user.
 type Conversation struct {
-	ID                      string    `json:"id"`
-	Owner                   string    `json:"-"`
-	Title                   string    `json:"title"`
+	ID    string `json:"id"`
+	Owner string `json:"-"`
+	Title string `json:"title"`
 	// TitleLocked is true after the user renames the conversation. Hangup must
 	// not replace a locked title with the upstream chatgpt.com title.
-	TitleLocked             bool      `json:"title_locked"`
-	Preview                 string    `json:"preview"`
+	TitleLocked       bool   `json:"title_locked"`
+	Preview           string `json:"preview"`
+	Mode              string `json:"mode"`
+	PromptVersion     string `json:"prompt_version,omitempty"`
+	PromptInjectedFor string `json:"prompt_injected_for,omitempty"`
 	// AccountID is the sticky pool account used for this conversation's upstream
 	// chatgpt.com thread. 0 means no account has been bound yet.
 	AccountID               int64     `json:"account_id,omitempty"`
@@ -51,6 +57,14 @@ type UpstreamContextUpdate struct {
 	UpstreamParentMessageID *string
 	UpstreamVoiceSessionID  *string
 	GatewayVoiceSessionID   *string
+}
+
+// PromptContextUpdate stores the mode and exact prompt initialization state
+// for one durable conversation.
+type PromptContextUpdate struct {
+	Mode              *string
+	PromptVersion     *string
+	PromptInjectedFor *string
 }
 
 // Message is an idempotently persisted message. ClientID remains stable while a
@@ -110,8 +124,18 @@ func (s *Store) List(owner string) ([]Conversation, error) {
 
 // Create creates an empty persisted conversation.
 func (s *Store) Create(owner, title string) (Conversation, error) {
+	return s.CreateWithMode(owner, title, "personal")
+}
+
+// CreateWithMode creates an empty persisted conversation bound to one prompt
+// mode. A conversation never mixes personal and organization instructions.
+func (s *Store) CreateWithMode(owner, title, mode string) (Conversation, error) {
 	owner = normalizeOwner(owner)
 	title = strings.TrimSpace(title)
+	mode, err := normalizeMode(mode)
+	if err != nil {
+		return Conversation{}, err
+	}
 	if len([]rune(title)) > 120 {
 		return Conversation{}, &Error{Message: "conversation title is too long"}
 	}
@@ -119,11 +143,64 @@ func (s *Store) Create(owner, title string) (Conversation, error) {
 	s.db.Lock()
 	defer s.db.Unlock()
 	if _, err := s.db.Conn().Exec(
-		`INSERT INTO conversations (id, owner, title, preview, updated_at)
-		 VALUES (?, ?, ?, '', CURRENT_TIMESTAMP)`,
-		id, owner, title,
+		`INSERT INTO conversations (id, owner, title, preview, mode, updated_at)
+		 VALUES (?, ?, ?, '', ?, CURRENT_TIMESTAMP)`,
+		id, owner, title, mode,
 	); err != nil {
 		return Conversation{}, fmt.Errorf("create conversation: %w", err)
+	}
+	return s.getUnlocked(owner, id)
+}
+
+// UpdatePromptContext updates prompt metadata. Mode changes are allowed only
+// while the conversation is still empty and has no upstream binding.
+func (s *Store) UpdatePromptContext(owner, id string, update PromptContextUpdate) (Conversation, error) {
+	owner = normalizeOwner(owner)
+	id = strings.TrimSpace(id)
+	s.db.Lock()
+	defer s.db.Unlock()
+	current, err := s.getUnlocked(owner, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if update.Mode != nil {
+		mode, normalizeErr := normalizeMode(*update.Mode)
+		if normalizeErr != nil {
+			return Conversation{}, normalizeErr
+		}
+		if mode != current.Mode {
+			var messageCount int
+			if err := s.db.Conn().QueryRow(
+				"SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ?",
+				id,
+			).Scan(&messageCount); err != nil {
+				return Conversation{}, fmt.Errorf("count conversation messages: %w", err)
+			}
+			if messageCount > 0 || current.AccountID != 0 || current.UpstreamConversationID != "" || current.UpstreamVoiceSessionID != "" || current.GatewayVoiceSessionID != "" || current.PromptInjectedFor != "" {
+				return Conversation{}, &Error{Message: "conversation mode cannot change after the conversation starts"}
+			}
+		}
+		current.Mode = mode
+	}
+	if update.PromptVersion != nil {
+		current.PromptVersion = truncateText(strings.TrimSpace(*update.PromptVersion), 80)
+	}
+	if update.PromptInjectedFor != nil {
+		current.PromptInjectedFor = truncateText(strings.TrimSpace(*update.PromptInjectedFor), 200)
+	}
+	if _, err := s.db.Conn().Exec(`
+		UPDATE conversations SET
+			mode = ?,
+			prompt_version = ?,
+			prompt_injected_for = ?,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND owner = ?`,
+		current.Mode,
+		current.PromptVersion,
+		current.PromptInjectedFor,
+		id, owner,
+	); err != nil {
+		return Conversation{}, fmt.Errorf("update conversation prompt context: %w", err)
 	}
 	return s.getUnlocked(owner, id)
 }
@@ -407,6 +484,7 @@ func scanConversation(row store.Scanner) (Conversation, error) {
 	var titleLocked int
 	if err := row.Scan(
 		&conversation.ID, &conversation.Owner, &conversation.Title, &titleLocked, &conversation.Preview,
+		&conversation.Mode, &conversation.PromptVersion, &conversation.PromptInjectedFor,
 		&conversation.AccountID,
 		&conversation.UpstreamConversationID, &conversation.UpstreamParentMessageID,
 		&conversation.UpstreamVoiceSessionID, &conversation.GatewayVoiceSessionID,
@@ -416,6 +494,17 @@ func scanConversation(row store.Scanner) (Conversation, error) {
 	}
 	conversation.TitleLocked = titleLocked != 0
 	return conversation, nil
+}
+
+func normalizeMode(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "personal":
+		return "personal", nil
+	case "organization", "enterprise":
+		return "organization", nil
+	default:
+		return "", &Error{Message: "conversation mode must be personal or organization"}
+	}
 }
 
 func scanMessage(row store.Scanner) (Message, error) {

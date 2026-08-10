@@ -27,9 +27,11 @@ type AccountStore interface {
 type ConversationStore interface {
 	List(owner string) ([]conversations.Conversation, error)
 	Create(owner, title string) (conversations.Conversation, error)
+	CreateWithMode(owner, title, mode string) (conversations.Conversation, error)
 	Get(owner, id string) (conversations.Conversation, error)
 	UpdateTitle(owner, id, title string, lock *bool) (conversations.Conversation, error)
 	UpdateUpstreamContext(owner, id string, update conversations.UpstreamContextUpdate) (conversations.Conversation, error)
+	UpdatePromptContext(owner, id string, update conversations.PromptContextUpdate) (conversations.Conversation, error)
 	Delete(owner, id string) error
 	UpsertMessage(owner, conversationID string, message conversations.Message) (conversations.Message, error)
 }

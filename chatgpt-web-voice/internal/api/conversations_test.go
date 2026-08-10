@@ -13,7 +13,7 @@ import (
 
 func TestConversationManagementAPI(t *testing.T) {
 	_, mux := newAPITestServer(t)
-	create := performJSONRequest(t, mux, http.MethodPost, "/api/conversations", map[string]any{"title": "Dinner"})
+	create := performJSONRequest(t, mux, http.MethodPost, "/api/conversations", map[string]any{"title": "Dinner", "mode": "organization"})
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
 	}
@@ -23,7 +23,7 @@ func TestConversationManagementAPI(t *testing.T) {
 	if err := json.Unmarshal(create.Body.Bytes(), &createBody); err != nil {
 		t.Fatal(err)
 	}
-	if createBody.Conversation.ID == "" || createBody.Conversation.Title != "Dinner" {
+	if createBody.Conversation.ID == "" || createBody.Conversation.Title != "Dinner" || createBody.Conversation.Mode != "organization" {
 		t.Fatalf("unexpected created conversation: %+v", createBody.Conversation)
 	}
 
@@ -67,6 +67,13 @@ func TestConversationManagementAPI(t *testing.T) {
 	if bindAccount.Code != http.StatusOK || !strings.Contains(bindAccount.Body.String(), `"account_id":7`) {
 		t.Fatalf("sticky account bind failed: %d %s", bindAccount.Code, bindAccount.Body.String())
 	}
+	prompt := performJSONRequest(t, mux, http.MethodPatch, "/api/conversations/"+createBody.Conversation.ID, map[string]any{
+		"prompt_version":      "organization-v1.0",
+		"prompt_injected_for": "conv-sticky",
+	})
+	if prompt.Code != http.StatusOK || !strings.Contains(prompt.Body.String(), `"prompt_version":"organization-v1.0"`) {
+		t.Fatalf("prompt context update failed: %d %s", prompt.Code, prompt.Body.String())
+	}
 	deleteResp := performJSONRequest(t, mux, http.MethodDelete, "/api/conversations/"+createBody.Conversation.ID, nil)
 	if deleteResp.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", deleteResp.Code, deleteResp.Body.String())
@@ -74,6 +81,29 @@ func TestConversationManagementAPI(t *testing.T) {
 	missing := performJSONRequest(t, mux, http.MethodGet, "/api/conversations/"+createBody.Conversation.ID, nil)
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("expected deleted conversation to be missing, got %d %s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestConversationManagementAPIRejectsModeChangeAfterStart(t *testing.T) {
+	_, mux := newAPITestServer(t)
+	create := performJSONRequest(t, mux, http.MethodPost, "/api/conversations", map[string]any{"title": "", "mode": "personal"})
+	var createBody struct {
+		Conversation conversations.Conversation `json:"conversation"`
+	}
+	if err := json.Unmarshal(create.Body.Bytes(), &createBody); err != nil {
+		t.Fatal(err)
+	}
+	message := performJSONRequest(t, mux, http.MethodPost, "/api/conversations/"+createBody.Conversation.ID+"/messages", map[string]any{
+		"client_id": "mode-lock",
+		"role":      "user",
+		"content":   "hello",
+	})
+	if message.Code != http.StatusOK {
+		t.Fatalf("message failed: %d %s", message.Code, message.Body.String())
+	}
+	switchMode := performJSONRequest(t, mux, http.MethodPatch, "/api/conversations/"+createBody.Conversation.ID, map[string]any{"mode": "organization"})
+	if switchMode.Code != http.StatusBadRequest {
+		t.Fatalf("expected mode switch rejection, got %d %s", switchMode.Code, switchMode.Body.String())
 	}
 }
 

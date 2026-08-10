@@ -56,6 +56,7 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.voice.CreateSession(voice.CreateSessionRequest{
+		Context:                 r.Context(),
 		Owner:                   adminVoiceOwner(r),
 		OfferSDP:                body.OfferSDP,
 		Voice:                   body.Voice,

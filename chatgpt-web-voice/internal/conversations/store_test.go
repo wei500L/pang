@@ -134,6 +134,46 @@ func TestConversationUpstreamContextPersistence(t *testing.T) {
 	}
 }
 
+func TestConversationPromptModeIsDurableAndLocksAfterStart(t *testing.T) {
+	conversations := newTestStore(t)
+	conversation, err := conversations.CreateWithMode("alice", "", "organization")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Mode != "organization" {
+		t.Fatalf("unexpected mode: %+v", conversation)
+	}
+	version := "organization-v1.0"
+	marker := "vs_prompt_test"
+	updated, err := conversations.UpdatePromptContext("alice", conversation.ID, PromptContextUpdate{
+		PromptVersion:     &version,
+		PromptInjectedFor: &marker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.PromptVersion != version || updated.PromptInjectedFor != marker {
+		t.Fatalf("unexpected prompt context: %+v", updated)
+	}
+	personal := "personal"
+	if _, err := conversations.UpdatePromptContext("alice", conversation.ID, PromptContextUpdate{Mode: &personal}); err == nil {
+		t.Fatal("expected mode change to be rejected after prompt initialization")
+	}
+
+	empty, err := conversations.Create("alice", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	organization := "organization"
+	switched, err := conversations.UpdatePromptContext("alice", empty.ID, PromptContextUpdate{Mode: &organization})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if switched.Mode != organization {
+		t.Fatalf("empty conversation did not switch mode: %+v", switched)
+	}
+}
+
 func TestConversationTitleTruncationPreservesUTF8(t *testing.T) {
 	conversations := newTestStore(t)
 

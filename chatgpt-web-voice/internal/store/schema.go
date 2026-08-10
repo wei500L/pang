@@ -38,6 +38,9 @@ func (db *DB) migrate() error {
 			title TEXT NOT NULL DEFAULT '',
 			title_locked INTEGER NOT NULL DEFAULT 0,
 			preview TEXT NOT NULL DEFAULT '',
+			mode TEXT NOT NULL DEFAULT 'personal',
+			prompt_version TEXT NOT NULL DEFAULT '',
+			prompt_injected_for TEXT NOT NULL DEFAULT '',
 			account_id INTEGER NOT NULL DEFAULT 0,
 			upstream_conversation_id TEXT NOT NULL DEFAULT '',
 			upstream_parent_message_id TEXT NOT NULL DEFAULT '',
@@ -145,6 +148,40 @@ func (db *DB) migrate() error {
 	}
 	if err := db.ensureConversationUpstreamColumns(); err != nil {
 		return err
+	}
+	if err := db.ensureConversationPromptColumns(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ensureConversationPromptColumns adds the durable conversation mode and
+// prompt-initialization marker used by the realtime client. Existing rows are
+// personal conversations so upgrades preserve their previous behavior.
+func (db *DB) ensureConversationPromptColumns() error {
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "mode", definition: "TEXT NOT NULL DEFAULT 'personal'"},
+		{name: "prompt_version", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "prompt_injected_for", definition: "TEXT NOT NULL DEFAULT ''"},
+	} {
+		has, err := db.hasColumn("conversations", column.name)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		statement := fmt.Sprintf(
+			`ALTER TABLE conversations ADD COLUMN %s %s`,
+			column.name,
+			column.definition,
+		)
+		if _, err := db.conn.Exec(statement); err != nil {
+			return fmt.Errorf("add conversations.%s: %w", column.name, err)
+		}
 	}
 	return nil
 }
