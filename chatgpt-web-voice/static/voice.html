@@ -2234,6 +2234,8 @@
   var suppressPreviewAssistantUntil = 0;
   var micPermissionWarmed = false;
   var systemPromptSent = false;
+  var promptWelcomeWaiter = null;
+  var promptWelcomeAssistantSeen = false;
   var systemPromptCache = Object.create(null);
   var systemPromptLoadPromise = Object.create(null);
   var contextInitializationPromise = null;
@@ -4748,11 +4750,6 @@
     if (systemPromptSent) return false;
     var text = await preloadSystemPrompt(conversationMode);
     var message = buildBaseUserMessage({ content_type: 'text', parts: [text] });
-    message.metadata.system_hints = {
-      system_prompt: true,
-      prompt_mode: conversationMode,
-      prompt_version: promptVersions[conversationMode]
-    };
     ignoredPromptMessageIds.add(message.id);
     sendRelayMessage(message);
     parentMessageId = message.id;
@@ -4763,10 +4760,39 @@
     return true;
   }
 
+  function notePromptWelcomeState(state) {
+    if (!promptWelcomeWaiter) return;
+    if (state === 'responding' || state === 'speaking') promptWelcomeAssistantSeen = true;
+    if (promptWelcomeAssistantSeen && (state === 'listening' || state === 'idle')) {
+      var resolve = promptWelcomeWaiter;
+      promptWelcomeWaiter = null;
+      promptWelcomeAssistantSeen = false;
+      resolve();
+    }
+  }
+
+  function waitForPromptWelcome() {
+    return new Promise(function (resolve) {
+      var settled = false;
+      function finish() {
+        if (settled) return;
+        settled = true;
+        if (promptWelcomeWaiter === finish) promptWelcomeWaiter = null;
+        promptWelcomeAssistantSeen = false;
+        resolve();
+      }
+      promptWelcomeWaiter = finish;
+      promptWelcomeAssistantSeen = false;
+      setTimeout(finish, 25000);
+    });
+  }
+
   async function initializeVoiceContext() {
     if (contextReady) return;
     try {
+      var welcomeComplete = waitForPromptWelcome();
       await sendSystemPrompt();
+      await welcomeComplete;
       setContextReady(true);
       sendVoicePreviewGreeting();
       if (inCall) setUIKey('listening', 'statusListening', 'subConnected');
@@ -5778,6 +5804,7 @@
             log('dc', t, inner);
             if (t === 'state_update') {
               var st = (inner.payload && inner.payload.new_state) || '';
+              notePromptWelcomeState(st);
               if (st === 'listening') {
                 markAssistantListening();
                 setUIKey('listening', 'statusListening', 'subListening');

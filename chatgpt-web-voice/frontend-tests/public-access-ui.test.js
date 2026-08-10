@@ -32,13 +32,15 @@ test("conversation mode is session-bound and prompt initialization gates user in
   assert.match(voiceHTML, /data-conversation-mode="personal"/);
   assert.match(voiceHTML, /data-conversation-mode="organization"/);
   assert.match(voiceHTML, /prompt_injected_for/);
-  assert.match(voiceHTML, /prompt_mode: conversationMode/);
-  assert.match(voiceHTML, /system_prompt: true/);
+  assert.match(voiceHTML, /pangdonglai-system-prompt\.txt/);
+  assert.match(voiceHTML, /pangdonglai-system-prompt-enterprise\.txt/);
+  assert.doesNotMatch(voiceHTML, /system_prompt: true/);
   assert.match(voiceHTML, /ignoredPromptMessageIds\.has/);
   assert.match(voiceHTML, /conversation mode cannot change after the conversation starts|conversationHasStarted/);
   assert.match(voiceHTML, /return !!inCall && isDataChannelReady\(\) && contextReady && !sending/);
   assert.match(voiceHTML, /await preloadSystemPrompt\(conversationMode\);[\s\S]{0,180}localStream = await requestMic\(\)/);
-  assert.match(voiceHTML, /await sendSystemPrompt\(\);[\s\S]{0,100}setContextReady\(true\)/);
+  assert.match(voiceHTML, /var welcomeComplete = waitForPromptWelcome\(\);[\s\S]{0,180}await welcomeComplete;[\s\S]{0,80}setContextReady\(true\)/);
+  assert.match(voiceHTML, /notePromptWelcomeState\(st\)/);
   assert.match(voiceHTML, /function onVoiceChannelReady\(\) \{\s*if \(!inCall \|\| !isDataChannelReady\(\)\) return/);
   assert.doesNotMatch(voiceHTML, /fetch\('\/static\/pangdonglai-system-prompt\.txt'\)[\s\S]{0,260}sendVoicePreviewGreeting\(\)/);
 });
