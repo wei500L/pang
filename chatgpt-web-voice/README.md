@@ -180,8 +180,8 @@ docker compose down
 | `VOICE_LOGIN_MAX_FAILURES` | `8` | 登录失败锁定阈值 |
 | `VOICE_LOGIN_WINDOW_SECONDS` | `900` | 登录失败统计窗口 |
 | `VOICE_LOGIN_LOCKOUT_SECONDS` | `900` | 登录锁定时长 |
-| `VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE` | `10` | 每个游客 IP 每分钟高成本语音请求上限 |
-| `VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE` | `60` | 每个游客 IP 每分钟其他写请求上限 |
+| `VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE` | `30` | 每个游客 IP 每分钟高成本语音请求上限 |
+| `VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE` | `180` | 每个游客 IP 每分钟其他写请求上限 |
 | `VOICE_TRUST_CLOUDFLARE_IP` | `false` | 源站仅允许 Cloudflare 访问时，信任 `CF-Connecting-IP` |
 | `VOICE_SESSION_TTL_SECONDS` | `180` | 语音内存绑定 TTL |
 | `VOICE_MAX_ACCOUNT_ATTEMPTS` | `4` | 单次建连最多尝试账号数 |
@@ -398,8 +398,8 @@ chatgpt.com + Azure WebRTC
 - 成功建连后写入 `call_sessions`：调用方（guest / admin / 下游 key）、粘性 `account_id`、上游 id、语音参数等。
 - 挂断释放**内存绑定**；再拨时凭 `voice_session_id` 从 SQLite 恢复粘性账号与上游线索。
 - 管理端 `/sessions` 可查看元数据，**不展示聊天内容**。下游 `/v1` 本身也不落库聊天正文。
-- 管理端 `/records` 展示内置 `/voice` 产生的用户麦克风录音与聊天快照。编码音频存放在 `VOICE_DATA_DIR/recordings`，SQLite 只保存索引和正文快照，不保存音频 BLOB。
-- 录音使用浏览器 `MediaRecorder` 旁路采集，默认约 16 kbps、5 秒一片、串行上传；上传队列和失败处理与 WebRTC 媒体链路隔离。
+- 管理端 `/records` 展示内置 `/voice` 产生的用户麦克风录音与聊天快照。编码音频存放在 `VOICE_DATA_DIR/recordings`，SQLite 只保存索引和有界正文快照，不保存音频 BLOB。创建录音必须绑定当前调用方仍处于 active 的 `voice_session_id`，同一语音会话只能创建一条记录；上传还具有单片、单录音、owner/全局活动数量、跨通话内存和磁盘安全余量限制。进程重启或长时间无分片活动的残留录音会自动回收，管理员也可以直接删除活动记录。
+- 录音使用浏览器 `MediaRecorder` 旁路采集，默认约 16 kbps、5 秒一片、串行上传；浏览器队列以及服务端分片写入/文件组装都有非阻塞并发上限和 fail-open 处理，与 WebRTC 媒体链路隔离。
 
 更细的实现说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 

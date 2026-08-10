@@ -103,6 +103,8 @@ func (db *DB) migrate() error {
 		)`,
 		"CREATE INDEX IF NOT EXISTS idx_recordings_created ON recordings(created_at DESC, id DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_recordings_owner ON recordings(owner, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_recordings_status_owner ON recordings(status, owner)",
+		"CREATE INDEX IF NOT EXISTS idx_recordings_voice_session ON recordings(voice_session_id)",
 		"CREATE INDEX IF NOT EXISTS idx_recordings_conversation ON recordings(conversation_id, created_at DESC)",
 		`CREATE TABLE IF NOT EXISTS recording_messages (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

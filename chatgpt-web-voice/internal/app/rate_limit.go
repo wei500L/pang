@@ -22,8 +22,12 @@ const (
 	// Already-open pages from the previous release can emit roughly four
 	// caption updates per second. Keep them working during rollout; newly served
 	// pages coalesce updates to a much lower write rate.
-	publicConversationWriteLimit = 300
-	publicRecordingChunkLimit    = 60
+	// These buckets are deliberately generous compared with normal traffic:
+	// coalesced captions average below 60 writes/minute, while five-second
+	// recording chunks average 12 writes/minute. Keep ample headroom for retries
+	// and older pages without allowing an unbounded upload/write flood.
+	publicConversationWriteLimit = 600
+	publicRecordingChunkLimit    = 180
 	maxPublicRateEntries         = 4096
 	rateSweepInterval            = 10 * time.Second
 	rateEntryMaxAge              = 2 * time.Minute
@@ -49,11 +53,11 @@ type publicRateLimiter struct {
 func newPublicRateLimiter(cfg config.Config) *publicRateLimiter {
 	sessionLimit := cfg.PublicSessionRate
 	if sessionLimit < 1 {
-		sessionLimit = 10
+		sessionLimit = 30
 	}
 	writeLimit := cfg.PublicWriteRate
 	if writeLimit < 1 {
-		writeLimit = 60
+		writeLimit = 180
 	}
 	return &publicRateLimiter{
 		sessions:           newPublicRateBucket(),

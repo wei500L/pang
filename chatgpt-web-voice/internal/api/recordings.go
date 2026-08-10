@@ -14,7 +14,7 @@ import (
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
 )
 
-const maxRecordingChunkBytes = 2 << 20
+const maxRecordingChunkBytes = recordings.MaxChunkBytes
 
 type createRecordingRequest struct {
 	ConversationID string `json:"conversation_id"`
@@ -40,9 +40,17 @@ func (s *Server) createRecording(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": map[string]any{"error": err.Error()}})
 		return
 	}
+	request.VoiceSessionID = strings.TrimSpace(request.VoiceSessionID)
+	if request.VoiceSessionID == "" || len(request.VoiceSessionID) > 160 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"detail": map[string]any{"error": "invalid voice_session_id"},
+		})
+		return
+	}
 	item, err := s.recordings.Create(requestOwner(r), recordings.CreateInput{
 		ConversationID: request.ConversationID,
 		VoiceSessionID: request.VoiceSessionID,
+		CallOwner:      adminVoiceOwner(r),
 		MIMEType:       request.MIMEType,
 	})
 	if err != nil {
@@ -198,11 +206,11 @@ func (s *Server) deleteRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminRecordingJSON(item recordings.Item) map[string]any {
-	callerKind := "guest"
-	callerLabel := "guest"
-	if strings.HasPrefix(item.Owner, "admin:") {
-		callerKind = "admin"
-		callerLabel = "admin"
+	callerKind := "admin"
+	callerLabel := "admin"
+	if strings.HasPrefix(item.Owner, "guest:") {
+		callerKind = "guest"
+		callerLabel = "guest"
 	} else if strings.HasPrefix(item.Owner, "api_key:") {
 		callerKind = "api_key"
 		callerLabel = item.Owner
@@ -250,6 +258,17 @@ func writeRecordingError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, recordings.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]any{"detail": map[string]any{"error": "recording not found"}})
+	case errors.Is(err, recordings.ErrCallSessionNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": map[string]any{"error": "active call session not found"}})
+	case errors.Is(err, recordings.ErrCallSessionInactive):
+		writeJSON(w, http.StatusConflict, map[string]any{"detail": map[string]any{"error": "call session is not active"}})
+	case errors.Is(err, recordings.ErrCapacity):
+		w.Header().Set("Retry-After", "30")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"detail": map[string]any{"error": "recording capacity is temporarily full"}})
+	case errors.Is(err, recordings.ErrSessionAlreadyRecorded):
+		writeJSON(w, http.StatusConflict, map[string]any{"detail": map[string]any{"error": "call session already has a recording"}})
+	case errors.Is(err, recordings.ErrStorageFull):
+		writeJSON(w, http.StatusInsufficientStorage, map[string]any{"detail": map[string]any{"error": "recording storage is temporarily unavailable"}})
 	default:
 		var validationError *recordings.Error
 		if errors.As(err, &validationError) {

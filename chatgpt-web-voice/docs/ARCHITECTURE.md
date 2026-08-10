@@ -236,9 +236,15 @@ localStream
       → complete 时顺序组装为 webm / m4a / ogg
 ```
 
-- 上传串行重试，待上传内存上限 8 MiB；超过上限后丢弃后续分片并标记不完整；
+- 上传串行重试，单次与跨通话待上传内存均限制为 8 MiB；新通话会中止上一通话尚未完成的分片上传，避免与 WebRTC 竞争上行；
+- 录音创建在同一 SQLite 事务中校验 `voice_session_id` 属于当前调用方且仍为 active；同一语音会话只允许一条录音，防止重复创建/失败完成循环堆积元数据；
+- 服务端单片上限 256 KiB、单条录音上限 128 MiB、同一 owner 最多 2 条活动录音、全局最多 128 条活动录音，并始终为 SQLite 保留至少 512 MiB 可用磁盘；
+- 分片落盘最多 8 路、录音组装最多 2 路并发；磁盘写入先做进程内空间预留，过载时录音旁路直接降级，不排队占用 WebRTC 所需的 CPU、文件描述符或磁盘吞吐；
+- 分片通过临时文件原子发布，上传、完成和删除按 recording id 串行，防止超时重试并发破坏文件；
 - 音频文件不写 SQLite，数据库只保存元数据与完成时的聊天正文快照；
 - `MediaRecorder`、网络或磁盘故障均 fail-open，不修改 WebRTC 状态；
+- 服务重启会把遗留的活动录音标记为失败并清理分片；运行中超过 30 分钟没有新分片的录音也会在低频 sweep 中回收；
+- 聊天快照最多保留最近 120 条、每条最多 8192 字符，防止后台详情占满容器内存；
 - 只覆盖内置 `/voice` 的用户麦克风，不包含 AI 远端音轨，也不覆盖下游 `/v1` 客户端。
 
 ### 5.4 挂断与释放
@@ -524,7 +530,7 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 
 ### recordings / recording_messages
 
-- `recordings`：owner、本地/网关会话 id、MIME、状态、分片数、字节数、时长与错误；
+- `recordings`：owner、本地/网关会话 id、MIME、状态、分片数、字节数、时长与错误；创建时在事务内验证对应 `call_sessions` 的 owner/active 状态，并通过有索引的全局与 owner 活动计数限制并发目录数量；
 - `recording_messages`：录音完成时从 `conversation_messages` 复制的独立正文快照；
 - 编码音频位于 `data/recordings`，不作为 BLOB 写入 SQLite；删除记录时同时删除音频、残留分片与聊天快照。
 
