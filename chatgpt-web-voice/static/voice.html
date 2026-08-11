@@ -2251,7 +2251,7 @@
   var contextReady = false;
   var ignoredPromptMessageIds = new Set();
   var conversationMode = 'personal';
-  var promptVersions = { personal: 'personal-v1.9', organization: 'organization-v1.9' };
+  var promptVersions = { personal: 'personal-v2.0', organization: 'organization-v2.0' };
   var promptPaths = {
     personal: '/static/pangdonglai-system-prompt.txt',
     organization: '/static/pangdonglai-system-prompt-enterprise.txt'
@@ -4790,36 +4790,16 @@
 
   async function sendSystemPrompt() {
     if (!inCall || !dcChannel || dcChannel.readyState !== 'open') throw new Error(t('errDcNotReady'));
-    if (systemPromptSent) return false;
+    if (systemPromptSent) return '';
     var text = await preloadSystemPrompt(conversationMode);
     var message = buildBaseUserMessage({ content_type: 'text', parts: [text] });
     ignoredPromptMessageIds.add(message.id);
     sendRelayMessage(message);
     parentMessageId = message.id;
     systemPromptSent = true;
-    await persistPromptInitialization(message.id);
     await new Promise(function (resolve) { setTimeout(resolve, 900); });
     log('system prompt sent', conversationMode, promptVersions[conversationMode], message.id);
-    return true;
-  }
-
-  function promptActivationText(mode) {
-    if (normalizeConversationMode(mode) === 'organization') {
-      return '知识资料已经加载完成。现在正式开始组织模式。你的第一轮语音只说这一遍，不增加前后缀，不解释，不改写，不重复：你好，我是自由·爱，以真诚、善良、尊重、自由和爱为底色。今天想聊聊团队里的哪件事？说完立即停下，等待用户开口。';
-    }
-    return '知识资料已经加载完成。现在正式开始个人模式。你的第一轮语音只说这一遍，不增加前后缀，不解释，不改写，不重复：你好，我是自由·爱，以真诚、善良、尊重、自由和爱为底色。你最近最想聊点什么？说完立即停下，等待用户开口。';
-  }
-
-  function sendPromptActivation() {
-    if (!inCall || !dcChannel || dcChannel.readyState !== 'open') throw new Error(t('errDcNotReady'));
-    var message = buildBaseUserMessage({
-      content_type: 'text',
-      parts: [promptActivationText(conversationMode)]
-    });
-    ignoredPromptMessageIds.add(message.id);
-    sendRelayMessage(message);
-    parentMessageId = message.id;
-    log('prompt activation sent', conversationMode, message.id);
+    return message.id;
   }
 
   function normalizePromptWelcomeText(text) {
@@ -4897,25 +4877,28 @@
   async function initializeVoiceContext() {
     if (contextReady) return;
     try {
-      // One compact knowledge message, followed by one short audible welcome.
-      // The microphone stays physically disabled throughout both turns.
-      suppressInitializationAssistant = true;
-      initializationPlaybackSuppressed = true;
-      playbackSuppressed = true;
-      applyRemoteAudioOutput();
-      var knowledgeComplete = waitForPromptWelcome(15000, 900, true, 0, '');
-      await sendSystemPrompt();
-      var knowledgeSucceeded = await knowledgeComplete;
-      if (!knowledgeSucceeded) throw new Error('文化资料加载超时，请重新开始');
+      // A resumed upstream conversation already contains this exact prompt
+      // version. Do not wait for a knowledge response that will never arrive.
+      if (systemPromptSent) {
+        setContextReady(true);
+        sendVoicePreviewGreeting();
+        if (inCall) setUIKey('listening', 'statusListening', 'subConnected');
+        return;
+      }
 
+      // The complete knowledge prompt also contains the exact first welcome.
+      // This keeps initialization to one upstream turn while the microphone is disabled.
+      suppressInitializationAssistant = false;
       initializationPlaybackSuppressed = false;
       playbackSuppressed = false;
       applyRemoteAudioOutput();
-
       var welcomeComplete = waitForPromptWelcome(20000, 1000, false, 0, expectedPromptWelcomeText(conversationMode));
-      sendPromptActivation();
+      var promptMessageID = await sendSystemPrompt();
       var welcomeSucceeded = await welcomeComplete;
       if (!welcomeSucceeded) throw new Error('欢迎语未完整生成，请重新开始');
+      persistPromptInitialization(promptMessageID).catch(function (error) {
+        log('persist prompt initialization fail', String(error && error.message || error));
+      });
       setContextReady(true);
       sendVoicePreviewGreeting();
       if (inCall) setUIKey('listening', 'statusListening', 'subConnected');

@@ -9,6 +9,8 @@ const voiceRoomJS = await readFile(new URL("../static/voice-room.js", import.met
 const loginHTML = await readFile(new URL("../static/login.html", import.meta.url), "utf8");
 const sessionsHTML = await readFile(new URL("../static/sessions.html", import.meta.url), "utf8");
 const recordsHTML = await readFile(new URL("../static/records.html", import.meta.url), "utf8");
+const personalPrompt = await readFile(new URL("../static/pangdonglai-system-prompt.txt", import.meta.url), "utf8");
+const organizationPrompt = await readFile(new URL("../static/pangdonglai-system-prompt-enterprise.txt", import.meta.url), "utf8");
 
 test("voice page switches management controls by public auth state", () => {
   assert.match(voiceHTML, /id="adminGatewaySection"[^>]*hidden/);
@@ -39,16 +41,17 @@ test("conversation mode is session-bound and prompt initialization gates user in
   assert.match(voiceHTML, /conversation mode cannot change after the conversation starts|conversationHasStarted/);
   assert.match(voiceHTML, /return !!inCall && isDataChannelReady\(\) && contextReady && !sending/);
   assert.match(voiceHTML, /await preloadSystemPrompt\(conversationMode\);[\s\S]{0,180}localStream = await requestMic\(\)/);
-  assert.match(voiceHTML, /var knowledgeComplete = waitForPromptWelcome\(15000, 900, true, 0, ''\);[\s\S]{0,100}await sendSystemPrompt\(\);[\s\S]{0,120}knowledgeSucceeded = await knowledgeComplete/);
-  assert.match(voiceHTML, /var welcomeComplete = waitForPromptWelcome\(20000, 1000, false, 0, expectedPromptWelcomeText\(conversationMode\)\);[\s\S]{0,100}sendPromptActivation\(\);[\s\S]{0,100}welcomeSucceeded = await welcomeComplete;[\s\S]{0,160}setContextReady\(true\)/);
+  assert.match(voiceHTML, /if \(systemPromptSent\) \{[\s\S]{0,120}setContextReady\(true\);[\s\S]{0,180}return;/);
+  assert.match(voiceHTML, /var welcomeComplete = waitForPromptWelcome\(20000, 1000, false, 0, expectedPromptWelcomeText\(conversationMode\)\);[\s\S]{0,120}promptMessageID = await sendSystemPrompt\(\);[\s\S]{0,120}welcomeSucceeded = await welcomeComplete/);
+  assert.match(voiceHTML, /if \(!welcomeSucceeded\) throw new Error\('欢迎语未完整生成，请重新开始'\)[\s\S]{0,160}persistPromptInitialization\(promptMessageID\)\.catch[\s\S]{0,220}setContextReady\(true\)/);
+  assert.doesNotMatch(voiceHTML, /systemPromptSent = true;[\s\S]{0,80}await persistPromptInitialization/);
+  assert.doesNotMatch(voiceHTML, /sendPromptActivation|promptActivationText|knowledgeComplete/);
   assert.match(voiceHTML, /normalizePromptWelcomeText\(promptWelcomeCollectedText\) !== promptWelcomeExpectedText/);
   assert.match(voiceHTML, /if \(!welcomeSucceeded\) throw new Error\('欢迎语未完整生成，请重新开始'\)/);
   assert.match(voiceHTML, /btnMute\.disabled = !callLive \|\| !contextReady/);
   assert.match(voiceHTML, /if \(!localStream \|\| !contextReady\) return/);
   assert.doesNotMatch(voiceHTML, /sendHiddenPromptPriming|promptPrimingText/);
-  assert.match(voiceHTML, /initializationPlaybackSuppressed = true[\s\S]{0,120}playbackSuppressed = true/);
-  assert.match(voiceHTML, /promptWelcomeExpectedText\.indexOf\(normalizedInitializationText\) === 0/);
-  assert.match(voiceHTML, /Delayed acknowledgements[\s\S]{0,180}suppressInitializationAssistant = false/);
+  assert.match(voiceHTML, /initializationPlaybackSuppressed = false[\s\S]{0,120}playbackSuppressed = false/);
   assert.match(voiceHTML, /notePromptWelcomeState\(st\)/);
   assert.match(voiceHTML, /notePromptWelcomeAssistantText\(clean\)/);
   assert.match(voiceHTML, /setTimeout\(function \(\) \{ finishPromptWelcomeWait\(true\); \}, promptWelcomeQuietMs\)/);
@@ -56,6 +59,17 @@ test("conversation mode is session-bound and prompt initialization gates user in
   assert.match(voiceHTML, /keep it instead of replacing it with "欢迎语生成"/);
   assert.match(voiceHTML, /function onVoiceChannelReady\(\) \{\s*if \(!inCall \|\| !isDataChannelReady\(\)\) return/);
   assert.doesNotMatch(voiceHTML, /fetch\('\/static\/pangdonglai-system-prompt\.txt'\)[\s\S]{0,260}sendVoicePreviewGreeting\(\)/);
+});
+
+test("runtime prompts expose cultural knowledge while protecting only internal controls", () => {
+  for (const prompt of [personalPrompt, organizationPrompt]) {
+    assert.match(prompt, /文化.*知识可以直接回答/);
+    assert.match(prompt, /不要先说“我不能复述提示词”或要求用户重新发送/);
+    assert.match(prompt, /文化.*知识可以正常回答、概括和讨论，不属于保密内容/);
+    assert.doesNotMatch(prompt, /不得向用户泄露、朗读或讨论其内部规则/);
+    assert.match(prompt, /不要先说“好”“收到”“资料已加载”/);
+    assert.match(prompt, /吸收完成后，本轮只说这一遍/);
+  }
 });
 
 test("text-only QA mode uses a silent media track and never starts microphone recording", () => {
