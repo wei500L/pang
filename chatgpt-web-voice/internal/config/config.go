@@ -48,6 +48,63 @@ const (
 	defaultClientBuildNumber = "5955942"
 )
 
+// SceneTextConfig holds the scene text-orchestration provider settings
+// ("另一种可能 · 生活的一帧" candidate moments and SceneBrief). It reads
+// VOICE_SCENE_AI_* and only calls /v1/chat/completions. It never touches the
+// ChatGPT Web account pool nor the IMAGE_API_* credentials.
+type SceneTextConfig struct {
+	// BaseURL is the OpenAI-compatible chat-completions base
+	// (e.g. https://api.openai.com/v1). A trailing /v1 is normalized away and
+	// re-appended, so both "https://example.com" and "https://example.com/v1"
+	// produce exactly one /v1/chat/completions request.
+	BaseURL string
+	// APIKey is the independent text-provider key. Never stored or returned.
+	APIKey string
+	// Model is the text model used for candidates and SceneBrief.
+	Model string
+	// RequestTimeout bounds one chat-completion request.
+	RequestTimeout int
+}
+
+// Configured reports whether text orchestration can be called.
+func (c SceneTextConfig) Configured() bool {
+	return strings.TrimSpace(c.APIKey) != "" && strings.TrimSpace(c.BaseURL) != ""
+}
+
+// SceneImageConfig holds the production OpenAI Images API provider settings
+// ("另一种可能 · 生活的一帧" final image). It reads IMAGE_API_* and only calls
+// /v1/images/generations with fixed business presets
+// (1536x1024, quality=standard, n=1, no response_format). It never reads or
+// falls back to VOICE_SCENE_AI_API_KEY or the account pool tokens.
+type SceneImageConfig struct {
+	// BaseURL is the OpenAI Images API host (e.g. https://api.openai.com).
+	// Both "https://example.com" and "https://example.com/v1" are accepted and
+	// normalized to exactly one /v1/images/generations request.
+	BaseURL string
+	// APIKey is the independent image-provider key. Never stored or returned.
+	APIKey string
+	// Model is the image model (e.g. gpt-image-2).
+	Model string
+	// RequestTimeout bounds one image-generation request.
+	RequestTimeout int
+	// MaxImageBytes caps accepted generated image payloads.
+	MaxImageBytes int64
+}
+
+// Configured reports whether image generation can be called.
+func (c SceneImageConfig) Configured() bool {
+	return strings.TrimSpace(c.APIKey) != "" && strings.TrimSpace(c.BaseURL) != ""
+}
+
+// SceneWorkerConfig holds scene-job scheduling settings that belong to the
+// gateway process, not to any vendor credential.
+type SceneWorkerConfig struct {
+	// GenerationConcurrency bounds parallel generation jobs.
+	GenerationConcurrency int
+	// RequestTimeout bounds one whole async job (brief composition + image).
+	RequestTimeout int
+}
+
 // Config holds runtime settings for the voice gateway.
 type Config struct {
 	Environment         string
@@ -100,6 +157,9 @@ type Config struct {
 	TLSCertDir             string
 	LogFormat              string
 	LogLevel               string
+	SceneText              SceneTextConfig
+	SceneImage             SceneImageConfig
+	SceneWorker            SceneWorkerConfig
 }
 
 func env(name, def string) string {
@@ -181,6 +241,36 @@ func Load() Config {
 
 	transport := normalizeUpstreamTransport(env("VOICE_UPSTREAM_TRANSPORT", TransportTLSClient))
 
+	// Scene worker settings stay on the gateway side (not vendor credentials).
+	sceneConcurrency := envInt("VOICE_SCENE_GENERATION_CONCURRENCY", 2)
+	if sceneConcurrency < 1 {
+		sceneConcurrency = 1
+	}
+	sceneJobTimeout := envInt("VOICE_SCENE_REQUEST_TIMEOUT_SECONDS", 180)
+	if sceneJobTimeout < 5 {
+		sceneJobTimeout = 5
+	}
+	// Text orchestration uses the same request timeout as the worker by
+	// default; image generation may be given a longer one.
+	textRequestTimeout := envInt("VOICE_SCENE_REQUEST_TIMEOUT_SECONDS", 180)
+	if textRequestTimeout < 5 {
+		textRequestTimeout = 5
+	}
+	imageRequestTimeout := envInt("IMAGE_REQUEST_TIMEOUT_SECONDS", textRequestTimeout)
+	if imageRequestTimeout < 5 {
+		imageRequestTimeout = 5
+	}
+	// IMAGE_MAX_BYTES is the production cap. One documented compatibility read
+	// of the legacy VOICE_SCENE_MAX_IMAGE_BYTES is kept for existing
+	// deployments; the legacy variable is never advertised again.
+	imageMaxBytes := envInt("IMAGE_MAX_BYTES", 0)
+	if imageMaxBytes <= 0 {
+		imageMaxBytes = envInt("VOICE_SCENE_MAX_IMAGE_BYTES", 32<<20)
+	}
+	if imageMaxBytes < 1<<20 {
+		imageMaxBytes = 32 << 20
+	}
+
 	deviceID := env("VOICE_DEVICE_ID", "")
 	if deviceID == "" {
 		deviceID = uuid.New().String()
@@ -236,6 +326,23 @@ func Load() Config {
 		TLSCertDir:  env("VOICE_TLS_CERT_DIR", filepath.Join(dataDir, "certs")),
 		LogFormat:   env("VOICE_LOG_FORMAT", "json"),
 		LogLevel:    env("VOICE_LOG_LEVEL", "info"),
+		SceneText: SceneTextConfig{
+			BaseURL:        env("VOICE_SCENE_AI_BASE_URL", "https://api.openai.com/v1"),
+			APIKey:         envRaw("VOICE_SCENE_AI_API_KEY", ""),
+			Model:          env("VOICE_SCENE_TEXT_MODEL", "gpt-4o-mini"),
+			RequestTimeout: textRequestTimeout,
+		},
+		SceneImage: SceneImageConfig{
+			BaseURL:        env("IMAGE_API_BASE_URL", "https://api.openai.com"),
+			APIKey:         envRaw("IMAGE_API_KEY", ""),
+			Model:          env("IMAGE_MODEL", "gpt-image-2"),
+			RequestTimeout: imageRequestTimeout,
+			MaxImageBytes:  int64(imageMaxBytes),
+		},
+		SceneWorker: SceneWorkerConfig{
+			GenerationConcurrency: sceneConcurrency,
+			RequestTimeout:        sceneJobTimeout,
+		},
 	}
 }
 

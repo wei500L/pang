@@ -10,6 +10,7 @@ import (
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/apikeys"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/scenes"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/voice"
 )
 
@@ -79,6 +80,7 @@ type Dependencies struct {
 	APIKeys       APIKeyStore
 	CallSessions  CallSessionStore
 	Recordings    RecordingStore
+	Scenes        scenes.Interface
 }
 
 // Server holds HTTP handlers for the voice gateway.
@@ -89,6 +91,7 @@ type Server struct {
 	apiKeys       APIKeyStore
 	callSessions  CallSessionStore
 	recordings    RecordingStore
+	scenes        scenes.Interface
 }
 
 // New creates an API server from domain dependencies.
@@ -100,6 +103,7 @@ func New(deps Dependencies) *Server {
 		apiKeys:       deps.APIKeys,
 		callSessions:  deps.CallSessions,
 		recordings:    deps.Recordings,
+		scenes:        deps.Scenes,
 	}
 }
 
@@ -126,6 +130,14 @@ func (s *Server) RegisterPublic(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/conversations/{id}", s.updateConversation)
 	mux.HandleFunc("DELETE /api/conversations/{id}", s.deleteConversation)
 	mux.HandleFunc("POST /api/conversations/{id}/messages", s.upsertConversationMessage)
+	mux.HandleFunc("POST /api/conversations/{id}/scene-drafts", s.createSceneDraft)
+	mux.HandleFunc("GET /api/conversations/{id}/scenes", s.listConversationScenes)
+	mux.HandleFunc("GET /api/scenes/{id}", s.getScene)
+	mux.HandleFunc("PATCH /api/scenes/{id}", s.patchScene)
+	mux.HandleFunc("POST /api/scenes/{id}/generate", s.generateScene)
+	mux.HandleFunc("POST /api/scenes/{id}/regenerate", s.regenerateScene)
+	mux.HandleFunc("GET /api/scenes/{id}/image", s.serveSceneImage)
+	mux.HandleFunc("DELETE /api/scenes/{id}", s.deleteScene)
 	mux.HandleFunc("POST /api/recordings", s.createRecording)
 	mux.HandleFunc("PUT /api/recordings/{id}/chunks/{sequence}", s.uploadRecordingChunk)
 	mux.HandleFunc("POST /api/recordings/{id}/complete", s.completeRecording)

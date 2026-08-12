@@ -89,14 +89,14 @@
 
 1. **配置**：`config.Load()` / `Validate()`，强制 `VOICE_AUTH_*` 与 `VOICE_TOKEN_ENCRYPTION_KEY`。
 2. **日志**：`logging.New` → 全局 `slog`。
-3. **SQLite**：`store.Open` + schema migrate（WAL、accounts / api_keys / conversations / messages / call_sessions / recordings / recording_messages / auth_sessions）。
+3. **SQLite**：`store.Open` + schema migrate（WAL、accounts / api_keys / conversations / messages / call_sessions / recordings / recording_messages / auth_sessions / scene_projects）。
 4. **密钥盒**：`secretbox` AES-256-GCM。
 5. **账号池**：`accounts.NewPoolFromDB` + `WithBox` + `SealStoredTokens`。
-6. **领域**：conversations、apikeys、callsessions、recordings、`voice.Service.WithCallSessions`。
+6. **领域**：conversations、apikeys、callsessions、recordings、`voice.Service.WithCallSessions`；可选 `scenes`（见 6.8）。
 7. **鉴权**：浏览器 `auth.Manager`（可选 durable session store）、下游 `auth.APIKeyManager`。
 8. **路由分层**（见第 4 节）。
 9. **可选 TLS** 后监听；SIGINT/SIGTERM 优雅退出。
-10. 启动时可将残留 **active** `call_sessions` 标为 released（进程重启后内存绑定已丢）。
+10. 启动时可将残留 **active** `call_sessions` 标为 released（进程重启后内存绑定已丢），并把遗留的 `queued/composing/generating` 生图任务标为 `failed`（进程重启不会恢复外部请求）。
 
 共享一个 `store.DB` 与进程级 mutex，避免多 repository 各自开库抢锁。
 
@@ -454,6 +454,41 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 下游响应 **不包含** pool `account_id`、token、proxy、上游账号信息。  
 `voice.Config()` 是能力文档唯一来源，与内置页共用。
 
+### 6.8 `scenes`：另一种可能 · 生活的一帧
+
+独立于 WebRTC 状态机的场景编排与生成子系统（`internal/scenes`），**P0 只支持 `personal` 模式**：
+
+| 职责 | 说明 |
+|---|---|
+| 候选编排 | 后端从 SQLite 读取该 owner 的会话消息（客户端不上传 transcript），限制最近 40 条 / 16000 字，交给文本模型生成严格 JSON：可修正摘要 + 恰好 3 个互不重复的普通生活时刻，每个时刻必须带「看得见的改变」与「仍然存在的现实代价」 |
+| 拒绝生成 | 对话不足、自伤/伤人/严重危机、露骨性内容、涉未成年人敏感内容 → `can_generate=false` / `blocked`，不进入生图 |
+| 画面编排 | 用户确认摘要并选择时刻后，文本模型产出 `SceneBrief`；服务端用统一 Prompt Builder（Brief 事实 + 统一视觉基线 + negative constraints）构造最终图片 Prompt，**不拼接对话原文**；视觉基线明确「画布严格 3:2 landscape，禁止 panoramic / 超宽银幕 / 竖向 / 方形」 |
+| 异步生图 | 有界队列（默认并发 2，`VOICE_SCENE_GENERATION_CONCURRENCY`），`queued → composing → generating → completed/failed` 状态写入 SQLite；队列满返回 429；同一 scene 不会重复启动 |
+| 双 Provider | **文本编排（`HTTPTextProvider`，`VOICE_SCENE_AI_*`）只调用 `/v1/chat/completions`**；**图片生成（`OpenAIImageProvider`，`IMAGE_API_*`）只调用 `/v1/images/generations`**。两套凭据完全隔离，互不回退、互不复用，也**绝不使用账号池的 ChatGPT Web `access_token`** |
+| 图片请求 | 固定 `model=IMAGE_MODEL / prompt / n=1 / size=1536x1024 / quality=standard`，**不发送 `response_format` 与 `output_format`**；仅一次传输重试（临时网络错误与 408/409/429/500/502/503/504，500ms–1s 可取消退避），400/401/403/404 及解析/比例/解码类错误绝不重试 |
+| 响应兼容 | 依次支持 `data[0].b64_json`、`data[0].b64`、base64 data URL（`data:image/...;base64,`）、`data[0].url`（仅 HTTPS，服务端立即下载、临时 URL 永不落库）、HTTP 原始图片字节响应；不信 JSON 声明的 MIME，一律以魔数识别真实格式（仅 PNG/JPEG/WebP） |
+| 归一化 | 宽高比相对误差 ≤ 0.5% 才通过（`3072x2048` 通过、`1774x887` 拒绝）；非精确 `1536x1024` 用 Lanczos-3 确定性缩放（不裁切、不拉伸错误比例、不改方向）；PNG/JPEG 保持原格式，WebP 无可用 encoder 时归一化为 PNG；精确 `1536x1024` 原样保留；最终扩展名 / MIME / 字节格式三者一致 |
+| 文件 | 图片保存在 `VOICE_DATA_DIR/scenes/`，先写临时文件再原子 rename；不写入 SQLite；下载/展示经 owner 鉴权的 `/api/scenes/{id}/image`，不暴露真实路径 |
+| 生命周期 | 删除 scene / conversation 时同步删除图片文件；启动时遗留的 `queued/composing/generating` 标为 `failed` |
+| 错误边界 | 公共错误只含稳定文案（`image provider request failed`、`image provider returned HTTP 429`、`generated image aspect ratio does not match 1536x1024` 等）；日志只记录 scene id / provider / model / HTTP status / attempt / 耗时 / 原始与最终格式尺寸 / 字节数，不记录 Prompt、Key、Authorization、供应商 body 或本地路径 |
+
+API（沿用 `/api` + owner + JSON 错误风格）：
+
+```text
+POST   /api/conversations/{id}/scene-drafts    # 读取会话 → 摘要 + 3 候选
+GET    /api/conversations/{id}/scenes          # 历史与活动任务（刷新/切会话恢复）
+GET    /api/scenes/{id}                        # 轮询状态
+PATCH  /api/scenes/{id}                        # 修正摘要 / 选择候选（服务端从候选列表解析）
+POST   /api/scenes/{id}/generate               # 校验 + 入队 → 202
+POST   /api/scenes/{id}/regenerate             # 新建 scene（parent_scene_id 溯源）→ 201
+GET    /api/scenes/{id}/image                  # owner 鉴权图片流
+DELETE /api/scenes/{id}
+```
+
+缺少任一能力时主服务照常启动，语音、普通对话、录音不受影响；scene draft / generation 返回明确 503（`scene text orchestration is not configured` / `scene image generation is not configured`），已生成的 scene 仍可查看与删除。`scene_projects.provider/model` 记录图片 Provider 与 `IMAGE_MODEL`，文本模型只出现在结构化启动日志。
+
+**未来参考图边界**：当前产品没有参考图输入。若未来 `ImageInput` 携带一个或多个参考图，必须改走 `POST /v1/images/edits`（multipart/form-data，`model/prompt/n=1/size/quality=standard` 文本字段 + 多个同名 `image` 文件字段，写入顺序即参考优先级，保留原文件名，MIME 仅 PNG/JPEG/WebP）；参考图不得 base64 塞进 generations JSON，也不得经 `/v1/chat/completions` 调用图片模型。Vision V2（`VISION_API_*`、cardinal / look-row / blind-direction / 视觉 QA）不属于当前交付。
+
 ---
 
 ## 7. 前端职责（内置页）
@@ -533,6 +568,25 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 - `recordings`：owner、本地/网关会话 id、MIME、状态、分片数、字节数、时长与错误；创建时在事务内验证对应 `call_sessions` 的 owner/active 状态，并通过有索引的全局与 owner 活动计数限制并发目录数量；
 - `recording_messages`：录音完成时从 `conversation_messages` 复制的独立正文快照；
 - 编码音频位于 `data/recordings`，不作为 BLOB 写入 SQLite；删除记录时同时删除音频、残留分片与聊天快照。
+
+### scene_projects
+
+「另一种可能 · 生活的一帧」的 draft 与生图任务单表：
+
+| 字段 | 含义 |
+|---|---|
+| `id` / `conversation_id` / `owner` / `mode` | 归属与模式（P0 仅 `personal`） |
+| `parent_scene_id` | 「按这个时刻再生成一次」的来源 scene（新 scene 溯源） |
+| `status` | `draft / queued / composing / generating / completed / failed / blocked` |
+| `approved_summary` | 用户可修正处境摘要（≤600 字符） |
+| `candidates_json` / `selected_candidate_json` | Go 结构体序列化写入、读取时严格校验；候选固定 3 个 |
+| `scene_brief_json` | 画面编排结果（不含对话原文） |
+| `caption` / `micro_action` / `disclaimer` | 完成态文案 |
+| `prompt_version` / `provider` / `model` | 生成溯源 |
+| `image_path` / `image_mime` / `image_width` / `image_height` | 文件索引（图片字节不落库，位于 `data/scenes/`） |
+| `error_message` / `blocked_reason` / `risk_flags` | 失败与拒绝原因（截断、脱敏） |
+
+索引：`(owner, conversation_id, updated_at DESC)`。所有读取/修改按 `owner` + id/conversation_id 过滤。
 
 ### auth_sessions
 
@@ -662,11 +716,12 @@ internal/app              装配、TLS、静态路由、root mux
 5. `internal/callsessions` + `internal/conversations`（含 `title_locked`）
 6. `internal/api/voice.go` + `downstream.go`
 7. `internal/auth/*`
-8. `static/voice.html`：`startCall` / DC / `stopCall` / 标题
+8. `static/voice.html`：`startCall` / DC / `stopCall` / 标题 / 场景工作室（`scene*` 函数）
 9. `internal/store/schema.go`
+10. 场景子系统：`internal/scenes/model.go` → `store.go` → `service.go` → `worker.go` → `text_provider_http.go` / `image_provider_openai.go` / `lanczos.go`
 
 ---
 
 ## 15. 一句话总结
 
-**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的实时媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本；内置页面另以 fail-open 的旁路分片保存用户麦克风编码副本和聊天快照，而下游媒体及 AI 远端音轨仍不进入网关。**
+**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的实时媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本；内置页面另以 fail-open 的旁路分片保存用户麦克风编码副本和聊天快照，而下游媒体及 AI 远端音轨仍不进入网关。「另一种可能 · 生活的一帧」是独立的场景编排子系统：从已保存对话生成可修正摘要与 3 个候选时刻，经用户选择后用独立外部 AI Key 异步生图，图片落盘 `data/scenes` 而不进 SQLite，owner 鉴权后经 API 访问，账号池 token 永不参与生图。**

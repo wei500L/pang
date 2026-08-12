@@ -120,6 +120,41 @@ func (db *DB) migrate() error {
 			UNIQUE(recording_id, client_id)
 		)`,
 		"CREATE INDEX IF NOT EXISTS idx_recording_messages_recording ON recording_messages(recording_id, id)",
+		// scene_projects: "另一种可能 · 生活的一帧" drafts and generation jobs.
+		// Only drafts and metadata live here; generated images are files under
+		// VOICE_DATA_DIR/scenes and are never stored as SQLite BLOBs.
+		`CREATE TABLE IF NOT EXISTS scene_projects (
+			id TEXT PRIMARY KEY,
+			conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+			parent_scene_id TEXT NOT NULL DEFAULT '',
+			owner TEXT NOT NULL,
+			mode TEXT NOT NULL,
+			status TEXT NOT NULL,
+			approved_summary TEXT NOT NULL DEFAULT '',
+			tensions_json TEXT NOT NULL DEFAULT '[]',
+			culture_lens TEXT NOT NULL DEFAULT '',
+			candidates_json TEXT NOT NULL DEFAULT '[]',
+			selected_candidate_json TEXT NOT NULL DEFAULT '{}',
+			scene_brief_json TEXT NOT NULL DEFAULT '{}',
+			caption TEXT NOT NULL DEFAULT '',
+			micro_action TEXT NOT NULL DEFAULT '',
+			disclaimer TEXT NOT NULL DEFAULT '',
+			prompt_version TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			image_path TEXT NOT NULL DEFAULT '',
+			image_mime TEXT NOT NULL DEFAULT '',
+			image_width INTEGER NOT NULL DEFAULT 0,
+			image_height INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT NOT NULL DEFAULT '',
+			blocked_reason TEXT NOT NULL DEFAULT '',
+			risk_flags TEXT NOT NULL DEFAULT '',
+			generation_attempt INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at TEXT NOT NULL DEFAULT ''
+		)`,
+		"CREATE INDEX IF NOT EXISTS idx_scene_projects_owner_conversation ON scene_projects(owner, conversation_id, updated_at DESC)",
 		// Browser login sessions survive process restarts (token hash only).
 		`CREATE TABLE IF NOT EXISTS auth_sessions (
 			token_hash TEXT PRIMARY KEY,

@@ -1885,6 +1885,71 @@
             <div id="transcriptMeta" class="transcript-meta" hidden data-i18n="transcriptMetaDefault"></div>
             <div id="transcriptList" class="transcript-list" aria-live="polite"><p class="caption-empty" data-i18n="transcriptEmpty">通话开始后会在这里显示字幕</p></div>
           </section>
+          <section id="sceneStudio" class="scene-studio" hidden aria-label="另一种可能 · 生活的一帧" data-i18n-aria="sceneAria">
+            <div class="scene-studio-inner">
+              <div id="sceneStateEntry" class="scene-panel scene-entry" hidden>
+                <div class="scene-entry-copy">
+                  <h2 data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
+                  <p data-i18n="sceneEntryDesc">把刚才聊到的生活，变成一个可以看见的普通瞬间。</p>
+                </div>
+                <button type="button" id="btnSceneOpen" class="scene-entry-button" data-i18n="sceneOpenButton">把另一种可能变成一幅画</button>
+              </div>
+              <div id="sceneStateLoading" class="scene-panel scene-loading" hidden>
+                <p role="status" aria-live="polite" data-i18n="sceneLoading">正在整理刚才的对话…</p>
+              </div>
+              <div id="sceneStateSelection" class="scene-panel scene-selection" hidden>
+                <div class="scene-selection-head">
+                  <h2 data-i18n="sceneSelectTitle">你更想先看见哪一刻？</h2>
+                  <button type="button" id="btnSceneClose" class="scene-close-button" data-i18n="sceneClose">收起</button>
+                </div>
+                <label class="scene-summary-field" for="sceneSummaryInput">
+                  <span class="scene-summary-label" data-i18n="sceneSummaryLabel">处境摘要（可修改）</span>
+                  <textarea id="sceneSummaryInput" rows="3" maxlength="600"></textarea>
+                </label>
+                <p class="scene-fixed-note" data-i18n="sceneFixedNote">这不是对未来的预测，而是基于你提供的处境构造的目标情境。</p>
+                <div id="sceneCandidates" class="scene-candidates" role="radiogroup" data-i18n-aria="sceneCandidatesAria" aria-label="生活时刻候选"></div>
+                <div class="scene-selection-actions">
+                  <button type="button" id="btnSceneGenerate" class="scene-generate-button" disabled data-i18n="sceneGenerateButton">生成这一帧</button>
+                </div>
+              </div>
+              <div id="sceneStateProgress" class="scene-panel scene-progress" hidden>
+                <p id="sceneProgressPhase" class="scene-progress-phase" role="status" aria-live="polite"></p>
+                <div class="scene-progress-track" aria-hidden="true"><span></span></div>
+              </div>
+              <div id="sceneStateBlocked" class="scene-panel scene-blocked" hidden>
+                <p id="sceneBlockedReason" class="scene-blocked-reason" role="status" aria-live="polite"></p>
+                <button type="button" class="scene-close-button" id="btnSceneBlockedClose" data-i18n="sceneClose">收起</button>
+              </div>
+              <div id="sceneStateFailed" class="scene-panel scene-failed" hidden>
+                <p id="sceneFailedMessage" class="scene-failed-message" role="status" aria-live="polite"></p>
+                <div class="scene-failed-actions">
+                  <button type="button" id="btnSceneRetry" class="scene-ghost-button" data-i18n="sceneRetry">重试</button>
+                  <button type="button" id="btnSceneFailedClose" class="scene-close-button" data-i18n="sceneClose">收起</button>
+                </div>
+              </div>
+              <div id="sceneStateCompleted" class="scene-panel scene-completed" hidden>
+                <div class="scene-result-head">
+                  <h2 data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
+                  <p id="sceneDisclaimer" class="scene-disclaimer"></p>
+                </div>
+                <img id="sceneImage" class="scene-image" alt="" />
+                <p id="sceneCaption" class="scene-caption"></p>
+                <div class="scene-micro-action">
+                  <span class="scene-micro-action-label" data-i18n="sceneMicroActionLabel">一个可以开始的地方</span>
+                  <p id="sceneMicroAction"></p>
+                </div>
+                <div class="scene-result-actions">
+                  <button type="button" id="btnSceneDownload" class="scene-ghost-button" data-i18n="sceneDownload">下载图片</button>
+                  <button type="button" id="btnSceneRegenerate" class="scene-ghost-button" data-i18n="sceneRegenerate">按这个时刻再生成一次</button>
+                  <button type="button" id="btnSceneReselect" class="scene-ghost-button" data-i18n="sceneReselect">重新选择时刻</button>
+                </div>
+              </div>
+              <div id="sceneHistory" class="scene-history" hidden>
+                <div class="scene-history-title" data-i18n="sceneHistoryLabel">之前的生活一帧</div>
+                <div id="sceneHistoryList" class="scene-history-list"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -2098,10 +2163,37 @@
   var settingsBackdrop = document.getElementById('settingsBackdrop');
   var playbackVolumeEl = document.getElementById('playbackVolume');
   var playbackVolumeValueEl = document.getElementById('playbackVolumeValue');
+  var sceneStudioEl = document.getElementById('sceneStudio');
+  var sceneStateEntry = document.getElementById('sceneStateEntry');
+  var sceneStateLoading = document.getElementById('sceneStateLoading');
+  var sceneStateSelection = document.getElementById('sceneStateSelection');
+  var sceneStateProgress = document.getElementById('sceneStateProgress');
+  var sceneStateBlocked = document.getElementById('sceneStateBlocked');
+  var sceneStateFailed = document.getElementById('sceneStateFailed');
+  var sceneStateCompleted = document.getElementById('sceneStateCompleted');
+  var sceneHistoryEl = document.getElementById('sceneHistory');
+  var sceneHistoryList = document.getElementById('sceneHistoryList');
+  var btnSceneOpen = document.getElementById('btnSceneOpen');
+  var btnSceneClose = document.getElementById('btnSceneClose');
+  var btnSceneBlockedClose = document.getElementById('btnSceneBlockedClose');
+  var btnSceneFailedClose = document.getElementById('btnSceneFailedClose');
+  var btnSceneRetry = document.getElementById('btnSceneRetry');
+  var sceneSummaryInput = document.getElementById('sceneSummaryInput');
+  var sceneCandidatesEl = document.getElementById('sceneCandidates');
+  var btnSceneGenerate = document.getElementById('btnSceneGenerate');
+  var sceneProgressPhase = document.getElementById('sceneProgressPhase');
+  var sceneBlockedReason = document.getElementById('sceneBlockedReason');
+  var sceneFailedMessage = document.getElementById('sceneFailedMessage');
+  var sceneDisclaimer = document.getElementById('sceneDisclaimer');
+  var sceneImage = document.getElementById('sceneImage');
+  var sceneCaption = document.getElementById('sceneCaption');
+  var sceneMicroAction = document.getElementById('sceneMicroAction');
+  var btnSceneDownload = document.getElementById('btnSceneDownload');
+  var btnSceneRegenerate = document.getElementById('btnSceneRegenerate');
+  var btnSceneReselect = document.getElementById('btnSceneReselect');
 
   var pc = null;
-  var previewPc = null;
-  var previewAudio = null;
+  var previewPc = null;  var previewAudio = null;
   var previewMicStream = null;
   var previewTimer = 0;
   var previewStarting = false;
@@ -2140,6 +2232,29 @@
   var PLAYBACK_VOLUME_MAX = 3;
   var playbackVolumeStorageKey = 'chatgpt_web_voice_playback_volume_v1';
   var sending = false;
+  // "另一种可能 · 生活的一帧" scene studio state. Independent from the
+  // WebRTC listening/responding/speaking state machine on purpose.
+  var SCENE_STATE_HIDDEN = 'hidden';
+  var SCENE_STATE_ENTRY = 'entry';
+  var SCENE_STATE_LOADING = 'loading-candidates';
+  var SCENE_STATE_SELECTION = 'candidate-selection';
+  var SCENE_STATE_QUEUED = 'queued';
+  var SCENE_STATE_COMPOSING = 'composing';
+  var SCENE_STATE_GENERATING = 'generating';
+  var SCENE_STATE_COMPLETED = 'completed';
+  var SCENE_STATE_FAILED = 'failed';
+  var SCENE_STATE_BLOCKED = 'blocked';
+  var sceneState = SCENE_STATE_HIDDEN;
+  var sceneConversationId = ''; // conversation this studio currently belongs to
+  var sceneProject = null; // active project (draft or result)
+  var sceneList = []; // scenes of the active conversation
+  var sceneSelectedCandidateId = '';
+  var scenePollingId = '';
+  var scenePollingConversation = '';
+  var scenePollTimer = 0;
+  var sceneSummaryPersistTimer = 0;
+  var SCENE_POLL_INTERVAL_MS = 1800;
+  var sceneGenerateInFlight = false;
   var conversationId = '';
   var parentMessageId = '';
   var voiceSessionId = '';
@@ -2446,7 +2561,35 @@
       voiceDesc_maple: '开朗直率',
       voiceDesc_glimmer: '聪慧随性',
       voiceDesc_ember: '自信乐观',
-      voiceDesc_vale: '聪颖好奇'
+      voiceDesc_vale: '聪颖好奇',
+      sceneAria: '另一种可能 · 生活的一帧',
+      sceneTitle: '另一种可能 · 生活的一帧',
+      sceneEntryDesc: '把刚才聊到的生活，变成一个可以看见的普通瞬间。',
+      sceneOpenButton: '把另一种可能变成一幅画',
+      sceneLoading: '正在整理刚才的对话…',
+      sceneSelectTitle: '你更想先看见哪一刻？',
+      sceneCandidatesAria: '生活时刻候选',
+      sceneSummaryLabel: '处境摘要（可修改）',
+      sceneFixedNote: '这不是对未来的预测，而是基于你提供的处境构造的目标情境。',
+      sceneGenerateButton: '生成这一帧',
+      sceneClose: '收起',
+      scenePhaseQueued: '正在整理场景',
+      scenePhaseComposing: '正在构造画面',
+      scenePhaseGenerating: '正在生成生活的一帧',
+      sceneDisclaimer: '目标情境，不是未来预测',
+      sceneMicroActionLabel: '一个可以开始的地方',
+      sceneDownload: '下载图片',
+      sceneRegenerate: '按这个时刻再生成一次',
+      sceneReselect: '重新选择时刻',
+      sceneRetry: '重试',
+      sceneHistoryLabel: '之前的生活一帧',
+      sceneNotConfigured: '场景生成功能尚未配置，语音对话不受影响。',
+      sceneNeedSelection: '先选择你想看见的那一帧',
+      sceneBlockedFallback: '当前对话还不适合生成生活情境，可以继续聊一会儿再试。',
+      sceneError: '生活一帧暂时失败了：{error}',
+      sceneBusy: '这一帧还在生成中，请稍候再试。',
+      sceneQueueFull: '生成队列暂时繁忙，请稍后再试。',
+      sceneWelcomeSaved: '这是之前生成的生活一帧'
     },
     en: {
       pageTitle: 'Voice Call',
@@ -2629,7 +2772,35 @@
       voiceDesc_maple: 'Cheerful & candid',
       voiceDesc_glimmer: 'Savvy & relaxed',
       voiceDesc_ember: 'Confident & optimistic',
-      voiceDesc_vale: 'Bright & inquisitive'
+      voiceDesc_vale: 'Bright & inquisitive',
+      sceneAria: 'Another possibility · one frame of life',
+      sceneTitle: 'Another possibility · one frame of life',
+      sceneEntryDesc: 'Turn the life you just talked about into one visible, ordinary moment.',
+      sceneOpenButton: 'Turn another possibility into a picture',
+      sceneLoading: 'Reading through the conversation…',
+      sceneSelectTitle: 'Which moment do you want to see first?',
+      sceneCandidatesAria: 'Moment candidates',
+      sceneSummaryLabel: 'Situation summary (editable)',
+      sceneFixedNote: 'This is not a prediction of the future; it is a goal scene built from the situation you shared.',
+      sceneGenerateButton: 'Generate this frame',
+      sceneClose: 'Close',
+      scenePhaseQueued: 'Organizing the scene',
+      scenePhaseComposing: 'Composing the picture',
+      scenePhaseGenerating: 'Rendering one frame of life',
+      sceneDisclaimer: 'A goal scene, not a prediction of the future',
+      sceneMicroActionLabel: 'A place to start',
+      sceneDownload: 'Download image',
+      sceneRegenerate: 'Generate this moment again',
+      sceneReselect: 'Choose another moment',
+      sceneRetry: 'Retry',
+      sceneHistoryLabel: 'Earlier frames',
+      sceneNotConfigured: 'Scene generation is not configured; voice chat is unaffected.',
+      sceneNeedSelection: 'Choose the frame you want to see first',
+      sceneBlockedFallback: 'This conversation is not ready for a scene yet — talk a little more and try again.',
+      sceneError: 'This frame failed for now: {error}',
+      sceneBusy: 'This frame is still generating — please try again in a moment.',
+      sceneQueueFull: 'Generation is busy right now — please try again in a moment.',
+      sceneWelcomeSaved: 'A scene you made earlier'
     }
   };
 
@@ -3361,6 +3532,7 @@
     updateSessionHeader();
     renderSessionList();
     renderTranscript();
+    updateSceneEntry();
     return loaded;
   }
 
@@ -3682,6 +3854,485 @@
     else if (action === 'delete') openDeleteConversationDialog(id);
   }
 
+  // ---------------------------------------------------------------------------
+  // Scene studio ("另一种可能 · 生活的一帧")
+  // ---------------------------------------------------------------------------
+  // Independent subsystem: it never touches the WebRTC state machine and only
+  // appears when the call is fully over, the conversation is personal, and the
+  // saved conversation contains real user + assistant messages.
+  function sceneMessageRelevant(message) {
+    var content = String((message && message.content) || '').trim();
+    if (!content) return false;
+    if (content.indexOf('# 自由·爱') >= 0 || content.indexOf('实时语音提示词') >= 0 ||
+        content.indexOf('system prompt') >= 0 || content.indexOf('本轮加载与首次开场') >= 0) return false;
+    var normalized = content.toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]/g, '');
+    if (normalized.indexOf('你好我是自由爱以真诚善良尊重自由和爱为底色') >= 0) return false;
+    return true;
+  }
+
+  function sceneHasRealMessages(session) {
+    if (!session || !Array.isArray(session.messages)) return false;
+    var hasUser = false;
+    var hasAssistant = false;
+    session.messages.forEach(function (message) {
+      if (!sceneMessageRelevant(message)) return;
+      if (message.role === 'user') hasUser = true;
+      if (message.role === 'assistant') hasAssistant = true;
+    });
+    return hasUser && hasAssistant;
+  }
+
+  function sceneCanShow() {
+    if (inCall || starting || stoppingCall) return false;
+    if (!activeSessionId) return false;
+    var active = getActiveConversationSession();
+    if (!active) return false;
+    if (normalizeConversationMode(active.mode) !== 'personal') return false;
+    return sceneHasRealMessages(active);
+  }
+
+  function sceneSetState(state) {
+    sceneState = state;
+    var panels = [
+      ['entry', sceneStateEntry], ['loading-candidates', sceneStateLoading],
+      ['candidate-selection', sceneStateSelection], ['queued', sceneStateProgress],
+      ['composing', sceneStateProgress], ['generating', sceneStateProgress],
+      ['blocked', sceneStateBlocked], ['failed', sceneStateFailed],
+      ['completed', sceneStateCompleted]
+    ];
+    panels.forEach(function (row) {
+      if (row[1]) row[1].hidden = row[0] !== state;
+    });
+    if (sceneStudioEl) {
+      sceneStudioEl.hidden = state === SCENE_STATE_HIDDEN;
+      document.body.setAttribute('data-scene-state', state);
+    }
+    sceneRenderHistory();
+  }
+
+  function sceneStopPolling() {
+    if (scenePollTimer) {
+      clearInterval(scenePollTimer);
+      scenePollTimer = 0;
+    }
+    scenePollingId = '';
+    scenePollingConversation = '';
+  }
+
+  function sceneHide() {
+    sceneStopPolling();
+    if (sceneSummaryPersistTimer) {
+      clearTimeout(sceneSummaryPersistTimer);
+      sceneSummaryPersistTimer = 0;
+    }
+    sceneState = SCENE_STATE_HIDDEN;
+    sceneConversationId = '';
+    sceneProject = null;
+    sceneSelectedCandidateId = '';
+    if (sceneStudioEl) {
+      sceneStudioEl.hidden = true;
+      document.body.removeAttribute('data-scene-state');
+    }
+  }
+
+  // Entry conditions changed (hangup, conversation switch, mode change...).
+  function updateSceneEntry() {
+    if (!sceneCanShow()) {
+      if (sceneState !== SCENE_STATE_HIDDEN || sceneConversationId) sceneHide();
+      return;
+    }
+    if (sceneConversationId !== activeSessionId) {
+      sceneHide();
+      sceneConversationId = activeSessionId;
+      sceneProject = null;
+      sceneList = [];
+      sceneShowEntry();
+      sceneLoadScenes().catch(function (error) {
+        log('scene list fail', String(error && error.message || error));
+      });
+      return;
+    }
+    if (sceneState === SCENE_STATE_HIDDEN) {
+      sceneShowEntry();
+      sceneLoadScenes().catch(function (error) {
+        log('scene list fail', String(error && error.message || error));
+      });
+    }
+  }
+
+  function sceneShowEntry() {
+    sceneSetState(SCENE_STATE_ENTRY);
+  }
+
+  async function sceneLoadScenes() {
+    if (!activeSessionId || !sceneConversationId) return;
+    var data = await conversationRequest('/api/conversations/' + encodeURIComponent(activeSessionId) + '/scenes');
+    sceneList = Array.isArray(data.scenes) ? data.scenes : [];
+    if (sceneConversationId !== activeSessionId) return; // switched away
+    var activeJob = null;
+    var latestCompleted = null;
+    sceneList.forEach(function (item) {
+      if (item && (item.status === 'queued' || item.status === 'composing' || item.status === 'generating') && !activeJob) {
+        activeJob = item;
+      }
+      if (item && item.status === 'completed' && (!latestCompleted || item.updated_at > latestCompleted.updated_at)) {
+        latestCompleted = item;
+      }
+    });
+    if (activeJob) {
+      sceneProject = activeJob;
+      sceneShowProgress(activeJob.status);
+      sceneStartPolling(activeJob.id);
+      return;
+    }
+    if (latestCompleted && sceneState === SCENE_STATE_ENTRY) {
+      sceneProject = latestCompleted;
+      sceneShowCompleted(latestCompleted);
+      return;
+    }
+    sceneRenderHistory();
+  }
+
+  async function sceneOpenDraft() {
+    if (!activeSessionId || sceneGenerateInFlight) return;
+    sceneGenerateInFlight = true;
+    sceneSetState(SCENE_STATE_LOADING);
+    try {
+      var data = await conversationRequest('/api/conversations/' + encodeURIComponent(activeSessionId) + '/scene-drafts', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      var project = data.scene || null;
+      if (!project) throw new Error(t('sceneError', { error: 'empty response' }));
+      sceneProject = project;
+      if (project.status === 'blocked') {
+        sceneShowBlocked(project);
+      } else {
+        sceneShowSelection(project);
+      }
+    } catch (error) {
+      if (Number(error && error.status) === 503) {
+        sceneShowFailed(t('sceneNotConfigured'));
+      } else if (Number(error && error.status) === 429) {
+        sceneShowFailed(t('sceneQueueFull'));
+      } else {
+        sceneShowFailed(t('sceneError', { error: String(error && error.message || error) }));
+      }
+    } finally {
+      sceneGenerateInFlight = false;
+    }
+  }
+
+  function sceneShowBlocked(project) {
+    if (sceneBlockedReason) {
+      sceneBlockedReason.textContent = (project && project.blocked_reason) || t('sceneBlockedFallback');
+    }
+    sceneSetState(SCENE_STATE_BLOCKED);
+  }
+
+  function sceneShowFailed(message) {
+    if (sceneFailedMessage) sceneFailedMessage.textContent = message || t('sceneError', { error: '' });
+    sceneSetState(SCENE_STATE_FAILED);
+  }
+
+  function sceneShowSelection(project) {
+    if (!project) return;
+    sceneSelectedCandidateId = (project.selected_candidate && project.selected_candidate.id) || '';
+    if (sceneSummaryInput) sceneSummaryInput.value = project.approved_summary || '';
+    sceneRenderCandidates(project);
+    sceneUpdateGenerateButton();
+    sceneSetState(SCENE_STATE_SELECTION);
+  }
+
+  function sceneRenderCandidates(project) {
+    if (!sceneCandidatesEl) return;
+    sceneCandidatesEl.textContent = '';
+    var candidates = Array.isArray(project.candidates) ? project.candidates : [];
+    candidates.forEach(function (candidate, index) {
+      var label = document.createElement('label');
+      label.className = 'scene-candidate' + (candidate.id === sceneSelectedCandidateId ? ' selected' : '');
+      label.setAttribute('role', 'radio');
+      label.setAttribute('aria-checked', candidate.id === sceneSelectedCandidateId ? 'true' : 'false');
+      var input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'scene-candidate';
+      input.value = candidate.id;
+      input.className = 'scene-candidate-radio';
+      input.checked = candidate.id === sceneSelectedCandidateId;
+      input.setAttribute('aria-label', candidate.title || ('moment ' + (index + 1)));
+      input.onchange = function () {
+        sceneSelectCandidate(project, candidate);
+      };
+      var body = document.createElement('span');
+      body.className = 'scene-candidate-body';
+      var title = document.createElement('strong');
+      title.className = 'scene-candidate-title';
+      title.textContent = candidate.title || '';
+      var moment = document.createElement('span');
+      moment.className = 'scene-candidate-moment';
+      moment.textContent = candidate.moment || '';
+      var change = document.createElement('span');
+      change.className = 'scene-candidate-change';
+      change.textContent = candidate.visible_change || '';
+      var cost = document.createElement('span');
+      cost.className = 'scene-candidate-cost';
+      cost.textContent = candidate.retained_cost || '';
+      body.appendChild(title);
+      body.appendChild(moment);
+      if (candidate.visible_change) body.appendChild(change);
+      if (candidate.retained_cost) body.appendChild(cost);
+      label.appendChild(input);
+      label.appendChild(body);
+      sceneCandidatesEl.appendChild(label);
+    });
+  }
+
+  function sceneSelectCandidate(project, candidate) {
+    if (!project || !candidate) return;
+    sceneSelectedCandidateId = candidate.id;
+    sceneRenderCandidates(project);
+    sceneUpdateGenerateButton();
+    scenePersistDraft(project);
+  }
+
+  function sceneUpdateGenerateButton() {
+    if (!btnSceneGenerate) return;
+    var summary = String(sceneSummaryInput ? sceneSummaryInput.value : '').trim();
+    btnSceneGenerate.disabled = !sceneSelectedCandidateId || !summary;
+  }
+
+  function scenePersistDraft(project) {
+    if (!project || !project.id) return;
+    if (sceneSummaryPersistTimer) clearTimeout(sceneSummaryPersistTimer);
+    sceneSummaryPersistTimer = setTimeout(function () {
+      sceneSummaryPersistTimer = 0;
+      var summary = String(sceneSummaryInput ? sceneSummaryInput.value : '').trim();
+      if (!summary || !sceneSelectedCandidateId) return;
+      conversationRequest('/api/scenes/' + encodeURIComponent(project.id), {
+        method: 'PATCH',
+        body: JSON.stringify({
+          approved_summary: summary,
+          selected_candidate_id: sceneSelectedCandidateId
+        })
+      }).then(function () {
+        log('scene draft persisted', project.id);
+      }).catch(function (error) {
+        if (sceneState === SCENE_STATE_SELECTION) {
+          sceneShowFailed(t('sceneError', { error: String(error && error.message || error) }));
+        }
+      });
+    }, 600);
+  }
+
+  async function sceneGenerate() {
+    var project = sceneProject;
+    if (!project || !project.id || sceneGenerateInFlight) return;
+    if (!sceneSelectedCandidateId) {
+      toast(t('sceneNeedSelection'));
+      return;
+    }
+    var summary = String(sceneSummaryInput ? sceneSummaryInput.value : '').trim();
+    if (!summary) {
+      toast(t('sceneNeedSelection'));
+      return;
+    }
+    sceneGenerateInFlight = true;
+    try {
+      if (sceneSummaryPersistTimer) {
+        clearTimeout(sceneSummaryPersistTimer);
+        sceneSummaryPersistTimer = 0;
+      }
+      // Persist the latest summary + selection before the job starts so the
+      // worker composes the brief from exactly what the user sees.
+      await conversationRequest('/api/scenes/' + encodeURIComponent(project.id), {
+        method: 'PATCH',
+        body: JSON.stringify({
+          approved_summary: summary,
+          selected_candidate_id: sceneSelectedCandidateId
+        })
+      });
+      var data = await conversationRequest('/api/scenes/' + encodeURIComponent(project.id) + '/generate', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      var updated = data.scene || project;
+      sceneProject = updated;
+      sceneShowProgress(updated.status);
+      sceneStartPolling(updated.id);
+    } catch (error) {
+      var status = Number(error && error.status || 0);
+      if (status === 503) sceneShowFailed(t('sceneNotConfigured'));
+      else if (status === 429) sceneShowFailed(t('sceneQueueFull'));
+      else if (status === 409) sceneShowFailed(t('sceneBusy'));
+      else sceneShowFailed(t('sceneError', { error: String(error && error.message || error) }));
+    } finally {
+      sceneGenerateInFlight = false;
+    }
+  }
+
+  async function sceneRegenerate() {
+    var project = sceneProject;
+    if (!project || !project.id || sceneGenerateInFlight) return;
+    sceneGenerateInFlight = true;
+    sceneShowProgress(SCENE_STATE_QUEUED);
+    try {
+      var data = await conversationRequest('/api/scenes/' + encodeURIComponent(project.id) + '/regenerate', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      var updated = data.scene || null;
+      if (!updated) throw new Error('empty response');
+      sceneProject = updated;
+      sceneShowProgress(updated.status);
+      sceneStartPolling(updated.id);
+    } catch (error) {
+      var status = Number(error && error.status || 0);
+      if (status === 503) sceneShowFailed(t('sceneNotConfigured'));
+      else if (status === 429) sceneShowFailed(t('sceneQueueFull'));
+      else sceneShowFailed(t('sceneError', { error: String(error && error.message || error) }));
+    } finally {
+      sceneGenerateInFlight = false;
+    }
+  }
+
+  function sceneStartPolling(id) {
+    sceneStopPolling();
+    if (!id) return;
+    scenePollingId = id;
+    scenePollingConversation = activeSessionId;
+    scenePollNow();
+    if (scenePollTimer) clearInterval(scenePollTimer);
+    scenePollTimer = setInterval(scenePollNow, SCENE_POLL_INTERVAL_MS);
+  }
+
+  async function scenePollNow() {
+    if (!scenePollingId) return;
+    // Pause while the page is hidden; the visibility listener resumes on show.
+    if (document.hidden) return;
+    if (scenePollingConversation && scenePollingConversation !== activeSessionId) {
+      sceneStopPolling();
+      return;
+    }
+    try {
+      var data = await conversationRequest('/api/scenes/' + encodeURIComponent(scenePollingId));
+      var project = data.scene || null;
+      if (!project) return;
+      sceneProject = project;
+      var status = project.status;
+      if (status === 'queued' || status === 'composing' || status === 'generating') {
+        sceneShowProgress(status);
+        return;
+      }
+      sceneStopPolling();
+      if (status === 'completed') {
+        var found = false;
+        sceneList = sceneList.map(function (item) {
+          if (item && item.id === project.id) {
+            found = true;
+            return project;
+          }
+          return item;
+        });
+        if (!found) sceneList.unshift(project);
+        sceneShowCompleted(project);
+      } else if (status === 'failed') {
+        sceneShowFailed(t('sceneError', { error: project.error_message || '' }));
+      } else if (status === 'blocked') {
+        sceneShowBlocked(project);
+      }
+    } catch (error) {
+      if (Number(error && error.status || 0) === 404) {
+        sceneStopPolling();
+        sceneHide();
+      }
+    }
+  }
+
+  function sceneShowProgress(status) {
+    var phaseKey = 'scenePhaseQueued';
+    if (status === 'composing') phaseKey = 'scenePhaseComposing';
+    else if (status === 'generating') phaseKey = 'scenePhaseGenerating';
+    if (sceneProgressPhase) sceneProgressPhase.textContent = t(phaseKey);
+    sceneSetState(status);
+  }
+
+  function sceneShowCompleted(project) {
+    sceneProject = project;
+    if (sceneDisclaimer) sceneDisclaimer.textContent = project.disclaimer || t('sceneDisclaimer');
+    if (sceneCaption) sceneCaption.textContent = project.caption || '';
+    if (sceneMicroAction) sceneMicroAction.textContent = project.micro_action || '';
+    if (sceneImage) {
+      sceneImage.src = project.image_url ? project.image_url : '';
+      sceneImage.alt = project.caption || t('sceneTitle');
+    }
+    sceneSetState(SCENE_STATE_COMPLETED);
+    sceneRenderHistory();
+  }
+
+  function sceneRenderHistory() {
+    if (!sceneHistoryEl || !sceneHistoryList) return;
+    var completed = (sceneList || []).filter(function (item) {
+      return item && item.status === 'completed';
+    });
+    var currentId = sceneProject ? sceneProject.id : '';
+    var others = completed.filter(function (item) { return item.id !== currentId; });
+    if (!others.length) {
+      sceneHistoryEl.hidden = true;
+      sceneHistoryList.textContent = '';
+      return;
+    }
+    sceneHistoryEl.hidden = false;
+    sceneHistoryList.textContent = '';
+    others.forEach(function (item) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'scene-history-item';
+      button.setAttribute('aria-label', item.caption || t('sceneTitle'));
+      var thumb = document.createElement('img');
+      thumb.src = item.image_url || '';
+      thumb.alt = '';
+      thumb.loading = 'lazy';
+      var text = document.createElement('span');
+      text.className = 'scene-history-caption';
+      text.textContent = item.caption || '';
+      button.appendChild(thumb);
+      button.appendChild(text);
+      button.onclick = function () {
+        sceneProject = item;
+        sceneShowCompleted(item);
+      };
+      sceneHistoryList.appendChild(button);
+    });
+  }
+
+  function sceneDownload() {
+    var project = sceneProject;
+    if (!project || !project.image_url) return;
+    var ext = 'png';
+    var mime = String(project.image_mime || '').toLowerCase();
+    if (mime.indexOf('jpeg') >= 0 || mime.indexOf('jpg') >= 0) ext = 'jpg';
+    else if (mime.indexOf('webp') >= 0) ext = 'webp';
+    var link = document.createElement('a');
+    link.href = project.image_url;
+    link.download = project.id + '.' + ext;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () { link.remove(); }, 0);
+  }
+
+  function sceneReselect() {
+    var project = sceneProject;
+    if (!project) return;
+    // Show the original candidates again; editing is allowed on completed
+    // scenes, and "生成这一帧" starts a new generation attempt on this scene.
+    sceneSelectedCandidateId = (project.selected_candidate && project.selected_candidate.id) || '';
+    if (sceneSummaryInput) sceneSummaryInput.value = project.approved_summary || '';
+    sceneRenderCandidates(project);
+    sceneUpdateGenerateButton();
+    sceneSetState(SCENE_STATE_SELECTION);
+  }
+
   function syncTranscriptFromHistory() {
     currentTranscript = currentSessionHistory.map(function (item) {
       return {
@@ -3729,6 +4380,7 @@
     updateSessionHeader();
     renderSessionList();
     renderTranscript();
+    updateSceneEntry();
     log('local conversation created', session.id);
     return session;
   }
@@ -3775,6 +4427,7 @@
     }
     preloadSystemPrompt(mode).catch(function () {});
     toast(t('toastModeChanged', { mode: conversationModeLabel(mode) }));
+    updateSceneEntry();
   }
 
   async function activateConversationSession(id) {
@@ -4201,6 +4854,8 @@
     setAgentVisualState(state);
     updateCallControls();
     updateComposerState();
+    // The scene entry only exists outside calls; react to every UI state change.
+    updateSceneEntry();
   }
 
   function isDataChannelReady() {
@@ -6542,6 +7197,43 @@
     }
     setUIKey('idle', 'statusReady', 'subReady');
     updateComposerState();
+    // Scene studio bindings ("另一种可能 · 生活的一帧").
+    if (btnSceneOpen) btnSceneOpen.onclick = function () { sceneOpenDraft().catch(function () {}); };
+    if (btnSceneClose) btnSceneClose.onclick = sceneHide;
+    if (btnSceneBlockedClose) btnSceneBlockedClose.onclick = sceneHide;
+    if (btnSceneFailedClose) btnSceneFailedClose.onclick = sceneHide;
+    if (btnSceneRetry) {
+      btnSceneRetry.onclick = function () {
+        if (!sceneProject || !sceneProject.id) return;
+        if (sceneProject.selected_candidate && sceneProject.selected_candidate.id) {
+          sceneSelectedCandidateId = sceneProject.selected_candidate.id;
+        }
+        if (sceneProject.status === 'failed' || sceneProject.status === 'draft') {
+          sceneGenerate().catch(function () {});
+        } else {
+          sceneStartPolling(sceneProject.id);
+        }
+      };
+    }
+    if (btnSceneGenerate) btnSceneGenerate.onclick = function () { sceneGenerate().catch(function () {}); };
+    if (btnSceneRegenerate) btnSceneRegenerate.onclick = function () { sceneRegenerate().catch(function () {}); };
+    if (btnSceneReselect) btnSceneReselect.onclick = sceneReselect;
+    if (btnSceneDownload) btnSceneDownload.onclick = sceneDownload;
+    if (sceneSummaryInput) {
+      sceneSummaryInput.addEventListener('input', function () {
+        sceneUpdateGenerateButton();
+        if (sceneProject && sceneProject.id) scenePersistDraft(sceneProject);
+      });
+      sceneSummaryInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sceneGenerate().catch(function () {});
+        }
+      });
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && scenePollingId) scenePollNow();
+    });
     initializeConversationStore().catch(function () {});
     preloadSystemPrompt('personal').catch(function (error) {
       log('personal prompt preload fail', String(error && error.message || error));

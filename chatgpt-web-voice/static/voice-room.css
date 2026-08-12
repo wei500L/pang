@@ -773,6 +773,494 @@ body.app-shell .transcript-list {
   min-height: 0;
 }
 
+/* --------------------------------------------------------------------------
+   Scene studio ("另一种可能 · 生活的一帧")
+   Independent of the WebRTC state machine; only visible after a call ends.
+   -------------------------------------------------------------------------- */
+body.app-shell .scene-studio {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 6;
+  width: min(780px, calc(100% - 44px));
+  max-height: 100%;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+body.app-shell .scene-studio-inner {
+  pointer-events: auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 100%;
+  padding: 22px 24px 20px;
+  border: 1px solid rgba(127, 104, 81, 0.16);
+  border-radius: 26px;
+  color: var(--room-ink);
+  background: rgba(255, 253, 249, 0.9);
+  box-shadow: 0 26px 70px rgba(93, 72, 48, 0.14), inset 0 1px rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(22px) saturate(1.05);
+  -webkit-backdrop-filter: blur(22px) saturate(1.05);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+body.app-shell .scene-panel[hidden],
+body.app-shell .scene-history[hidden] { display: none !important; }
+
+/* While the studio is open (anything but the small entry card), dim the
+   floating captions so the panel and the conversation do not fight. */
+body.app-shell[data-scene-state]:not([data-scene-state="entry"]) .transcript-list { opacity: 0; }
+
+body.app-shell .scene-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+body.app-shell .scene-entry-copy h2 {
+  margin: 0 0 6px;
+  color: #4b4945;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+body.app-shell .scene-entry-copy p {
+  margin: 0;
+  color: #858079;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+body.app-shell .scene-entry-button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 20px;
+  border: 1px solid rgba(243, 111, 10, 0.34);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9b41, var(--room-orange) 58%, var(--room-orange-deep));
+  box-shadow: 0 10px 22px rgba(226, 92, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.34);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
+}
+
+body.app-shell .scene-entry-button:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: 0 13px 26px rgba(226, 92, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.36);
+}
+
+body.app-shell .scene-loading p {
+  margin: 0;
+  color: #77736d;
+  font-size: 13px;
+  text-align: center;
+}
+
+body.app-shell .scene-selection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+body.app-shell .scene-selection-head h2,
+body.app-shell .scene-result-head h2 {
+  margin: 0;
+  color: #4b4945;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+body.app-shell .scene-close-button,
+body.app-shell .scene-ghost-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(120, 100, 76, 0.18);
+  border-radius: 999px;
+  color: #6f6a63;
+  background: rgba(255, 253, 249, 0.72);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+body.app-shell .scene-close-button:hover,
+body.app-shell .scene-ghost-button:hover {
+  color: var(--room-orange-deep);
+  border-color: rgba(243, 111, 10, 0.3);
+  background: rgba(255, 252, 245, 0.9);
+}
+
+body.app-shell .scene-summary-field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+body.app-shell .scene-summary-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #77736d;
+  font-size: 12px;
+}
+
+body.app-shell .scene-summary-field textarea {
+  width: 100%;
+  min-height: 66px;
+  max-height: 150px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid rgba(120, 100, 76, 0.18);
+  border-radius: 14px;
+  color: #4f4d48;
+  background: rgba(255, 253, 249, 0.82);
+  font-family: "Noto Serif SC", serif;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+body.app-shell .scene-summary-field textarea:focus {
+  outline: none;
+  border-color: rgba(243, 111, 10, 0.34);
+  box-shadow: 0 0 0 3px rgba(243, 111, 10, 0.09);
+}
+
+body.app-shell .scene-fixed-note {
+  margin: 0 0 12px;
+  color: #8d877e;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+body.app-shell .scene-candidates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+body.app-shell .scene-candidate {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  padding: 13px 13px 12px;
+  border: 1px solid rgba(120, 100, 76, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 253, 249, 0.6);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+body.app-shell .scene-candidate:hover {
+  border-color: rgba(243, 111, 10, 0.26);
+  transform: translateY(-1px);
+}
+
+body.app-shell .scene-candidate.selected {
+  border-color: rgba(243, 111, 10, 0.55);
+  background: rgba(255, 248, 238, 0.82);
+  box-shadow: 0 0 0 3px rgba(243, 111, 10, 0.08);
+}
+
+body.app-shell .scene-candidate:focus-within {
+  outline: 2px solid rgba(243, 111, 10, 0.4);
+  outline-offset: 2px;
+}
+
+body.app-shell .scene-candidate-radio {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+body.app-shell .scene-candidate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.app-shell .scene-candidate-title {
+  color: #4b4945;
+  font-family: "Noto Serif SC", serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+body.app-shell .scene-candidate-moment,
+body.app-shell .scene-candidate-change,
+body.app-shell .scene-candidate-cost {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+body.app-shell .scene-candidate-moment { color: #6f6a63; }
+body.app-shell .scene-candidate-change { color: #4f7b63; }
+body.app-shell .scene-candidate-cost { color: #a06852; }
+
+body.app-shell .scene-selection-actions {
+  display: flex;
+  justify-content: center;
+}
+
+body.app-shell .scene-generate-button {
+  min-height: 42px;
+  padding: 0 30px;
+  border: 1px solid rgba(243, 111, 10, 0.34);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9b41, var(--room-orange) 58%, var(--room-orange-deep));
+  box-shadow: 0 10px 22px rgba(226, 92, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.34);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 160ms ease, filter 160ms ease, opacity 160ms ease;
+}
+
+body.app-shell .scene-generate-button:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+body.app-shell .scene-generate-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+body.app-shell .scene-progress {
+  text-align: center;
+  padding: 6px 0 2px;
+}
+
+body.app-shell .scene-progress-phase {
+  margin: 0 0 14px;
+  color: #4f4d48;
+  font-family: "Noto Serif SC", serif;
+  font-size: 14px;
+}
+
+body.app-shell .scene-progress-track {
+  width: min(280px, 70%);
+  height: 3px;
+  margin: 0 auto;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(120, 100, 76, 0.14);
+}
+
+body.app-shell .scene-progress-track span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--room-sage), var(--room-orange));
+  animation: scene-progress-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes scene-progress-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(280%); }
+}
+
+body.app-shell .scene-blocked-reason,
+body.app-shell .scene-failed-message {
+  margin: 0 0 16px;
+  color: #6f6a63;
+  font-size: 13px;
+  line-height: 1.8;
+  text-align: center;
+}
+
+body.app-shell .scene-failed-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+body.app-shell .scene-result-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+body.app-shell .scene-disclaimer {
+  margin: 0;
+  color: #a06852;
+  font-size: 12px;
+}
+
+body.app-shell .scene-image {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  object-fit: cover;
+  border-radius: 18px;
+  background: rgba(120, 100, 76, 0.06);
+  box-shadow: 0 16px 40px rgba(93, 72, 48, 0.12);
+}
+
+body.app-shell .scene-caption {
+  margin: 14px 0 0;
+  color: #4b4945;
+  font-family: "Noto Serif SC", serif;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+body.app-shell .scene-micro-action {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(79, 139, 112, 0.2);
+  border-radius: 14px;
+  background: rgba(239, 248, 242, 0.5);
+}
+
+body.app-shell .scene-micro-action-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #4f7b63;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+body.app-shell .scene-micro-action p {
+  margin: 0;
+  color: #4f4d48;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+body.app-shell .scene-result-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+body.app-shell .scene-history {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(120, 100, 76, 0.12);
+}
+
+body.app-shell .scene-history-title {
+  margin-bottom: 10px;
+  color: #77736d;
+  font-size: 11px;
+}
+
+body.app-shell .scene-history-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+body.app-shell .scene-history-item {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(120, 100, 76, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 253, 249, 0.6);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+body.app-shell .scene-history-item:hover {
+  border-color: rgba(243, 111, 10, 0.3);
+  transform: translateY(-1px);
+}
+
+body.app-shell .scene-history-item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: rgba(120, 100, 76, 0.06);
+}
+
+body.app-shell .scene-history-caption {
+  display: block;
+  padding: 8px 10px 9px;
+  color: #6f6a63;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  body.app-shell .scene-studio {
+    width: calc(100% - 28px);
+  }
+  body.app-shell .scene-candidates {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  body.app-shell .scene-studio {
+    width: calc(100% - 18px);
+    bottom: 0;
+  }
+  body.app-shell .scene-studio-inner {
+    padding: 16px 14px 14px;
+    border-radius: 20px;
+  }
+  body.app-shell .scene-entry {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    text-align: center;
+  }
+  body.app-shell .scene-candidates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.app-shell .scene-entry-button,
+  body.app-shell .scene-generate-button {
+    width: 100%;
+  }
+  body.app-shell .scene-image {
+    max-height: 38vh;
+  }
+  body.app-shell .scene-result-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+html[data-room-quality="low"] body.app-shell .scene-studio-inner {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.app-shell .scene-progress-track span { animation: none; }
+  body.app-shell .scene-candidate,
+  body.app-shell .scene-entry-button,
+  body.app-shell .scene-generate-button,
+  body.app-shell .scene-history-item { transition: none !important; }
+}
+
 body.app-shell .caption-log-line {
   position: absolute;
   width: min(270px, 25vw);

@@ -11,6 +11,7 @@ import (
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/auth"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/logging"
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/scenes"
 )
 
 type createConversationRequest struct {
@@ -194,7 +195,22 @@ func (s *Server) deleteConversation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": map[string]any{"error": err.Error()}})
 		return
 	}
-	if err := s.conversations.Delete(requestOwner(r), id); err != nil {
+	owner := requestOwner(r)
+	if s.scenes != nil {
+		// Single transactional delete path: the conversation row, its messages
+		// and all scene metadata are removed in one SQLite transaction; scene
+		// image files are cleaned after the commit. If a scene is still
+		// generating (ErrBusy) the whole deletion is refused: conversation and
+		// scenes stay intact.
+		if err := s.scenes.DeleteConversation(owner, id); err != nil {
+			if errors.Is(err, scenes.ErrNotFound) {
+				writeJSON(w, http.StatusNotFound, map[string]any{"detail": map[string]any{"error": "conversation resource not found"}})
+				return
+			}
+			writeSceneError(w, r, err)
+			return
+		}
+	} else if err := s.conversations.Delete(owner, id); err != nil {
 		writeConversationError(w, r, err)
 		return
 	}

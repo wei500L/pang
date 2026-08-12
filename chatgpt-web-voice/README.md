@@ -21,6 +21,7 @@
 - 下游 `/v1` 接入：只持 API Key + `voice_session_id` 即可建连 / 恢复
 - 粘性账号与上游续聊线索由网关持久化，不向下游暴露池内账号信息
 - 内置语音页使用由 GLB 表面采样生成的 GPU 粒子 Agent，并复用同一麦克风流实时驱动
+- **「另一种可能 · 生活的一帧」**：个人模式通话结束后，可把当前对话生成一份可修改的处境摘要与 3 个候选生活时刻，用户选择后异步生图（独立外部 AI Key，不占用账号池；仅 `personal` 模式）
 
 ### Agent 粒子视觉资产
 
@@ -217,6 +218,37 @@ docker compose down
 | `VOICE_TRUST_CLOUDFLARE_IP` | Cloudflare 代理且源站已封闭时设为 `true` |
 | `VOICE_PUBLIC_SESSION_RATE_LIMIT_PER_MINUTE` / `VOICE_PUBLIC_WRITE_RATE_LIMIT_PER_MINUTE` | 调整游客限流 |
 
+### 「另一种可能 · 生活的一帧」（可选）
+
+场景闭环由**两套完全独立的 Provider 与凭据**组成，互不回退、互不复用，也绝不使用账号池的 ChatGPT Web `access_token`：
+
+**文本编排（候选时刻 + SceneBrief）** — 只调用 `/v1/chat/completions`：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `VOICE_SCENE_AI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible 文本基址（可带或不带 `/v1`，均只会请求一次 `/v1/chat/completions`） |
+| `VOICE_SCENE_AI_API_KEY` | 空 | 独立文本 Key |
+| `VOICE_SCENE_TEXT_MODEL` | `gpt-4o-mini` | 候选时刻与画面编排模型 |
+
+**生产 OpenAI Images API（生图）** — 只调用 `/v1/images/generations`：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `IMAGE_API_BASE_URL` | `https://api.openai.com` | Images API 基址（可带或不带 `/v1`，均只会请求一次 `/v1/images/generations`） |
+| `IMAGE_API_KEY` | 空 | 独立图片 Key |
+| `IMAGE_MODEL` | `gpt-image-2` | 生图模型 |
+| `IMAGE_REQUEST_TIMEOUT_SECONDS` | 同 `VOICE_SCENE_REQUEST_TIMEOUT_SECONDS` | 单次生图请求超时 |
+| `IMAGE_MAX_BYTES` | `33554432` | 生成图片体积上限（32 MiB） |
+
+**Worker（网关侧调度，不属于供应商凭据）**：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `VOICE_SCENE_GENERATION_CONCURRENCY` | `2` | 并发生图任务数 |
+| `VOICE_SCENE_REQUEST_TIMEOUT_SECONDS` | `180` | 单个异步任务（Brief + 生图）总超时 |
+
+生图请求固定为 `size=1536x1024`、`quality=standard`、`n=1`，**不发送 `response_format` / `output_format`**；图片经 3:2 比例校验（误差 ≤ 0.5%）与 LANCZOS 确定性归一化到精确 `1536x1024` 后落盘 `VOICE_DATA_DIR/scenes/`（不写入 SQLite）。缺少任意一套配置时主服务照常启动，scene draft / generation 返回 `503`（分别提示 `scene text orchestration is not configured` 或 `scene image generation is not configured`）。仅支持 `personal` 模式，详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
 ### 固定默认（一般不用写）
 
 以下已在代码或镜像内置，**正常部署不必配置**：
@@ -390,6 +422,7 @@ chatgpt.com + Azure WebRTC
 | `internal/callsessions` | 网关会话元数据（无聊天正文） |
 | `internal/recordings` | 录音元数据、分片组装、聊天快照与文件生命周期 |
 | `internal/conversations` | 按游客/管理员 owner 隔离的内置语音页文本会话 |
+| `internal/scenes` | 「另一种可能 · 生活的一帧」：候选编排、画面 Brief、异步生图队列与图片文件生命周期 |
 | `internal/apikeys` | 下游 Key（仅存 hash） |
 
 ### 会话与恢复

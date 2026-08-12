@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/conversations"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/logging"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/recordings"
+	"github.com/dyhhhhhh/chatgpt-web-voice/internal/scenes"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/secretbox"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/store"
 	"github.com/dyhhhhhh/chatgpt-web-voice/internal/voice"
@@ -52,7 +54,13 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("account database open failed: %w", err)
 	}
-	defer db.Close()
+	// closeDB closes the SQLite handle exactly once. It must never run while
+	// the scene worker may still be writing; see the deferred close decision
+	// and stopSceneWorker below.
+	var dbCloseOnce sync.Once
+	closeDB := func() {
+		dbCloseOnce.Do(func() { _ = db.Close() })
+	}
 
 	tokenKey, err := secretbox.ParseKey(cfg.TokenEncryptionKey)
 	if err != nil {
@@ -97,6 +105,119 @@ func Run() error {
 	}
 	logger.Info("account_database_ready", "available_accounts", available)
 
+	// Scene subsystem ("另一种可能 · 生活的一帧"). Text orchestration
+	// (VOICE_SCENE_AI_*) and image generation (IMAGE_API_*) are fully separate
+	// providers with separate credentials: neither reads nor falls back to the
+	// other, and neither ever touches the ChatGPT Web account pool. The service
+	// is always wired so listing/viewing/deleting stored scenes keeps working;
+	// only draft creation and generation answer 503 when a capability is
+	// missing.
+	sceneStore := scenes.NewStore(db)
+	textProvider := scenes.NewHTTPTextProvider(cfg.SceneText, logger)
+	imageProvider := scenes.NewOpenAIImageProvider(cfg.SceneImage, logger)
+	service := scenes.NewService(
+		sceneStore,
+		filepath.Join(cfg.DataDir, "scenes"),
+		textProvider,
+		imageProvider,
+		logger,
+		imageProvider.Name(),
+		imageProvider.Model(),
+		cfg.SceneText.Configured(),
+		cfg.SceneImage.Configured(),
+	)
+	var sceneService scenes.Interface = service
+
+	// Legacy active jobs must be recovered regardless of provider or worker
+	// configuration; otherwise they would stay queued/composing/generating
+	// forever and the frontend would keep polling them.
+	if interrupted, recoveryErr := service.MarkInterruptedOnStartup(); recoveryErr != nil {
+		logger.Warn("scene_orphan_recovery_failed", "error", recoveryErr)
+	} else if interrupted > 0 {
+		logger.Info("scene_orphans_recovered", "count", interrupted)
+	}
+
+	// The worker is created only when both providers are configured. This gate
+	// deliberately uses ProvidersConfigured(), which does not depend on the
+	// worker existing (no circular dependency).
+	//
+	// sceneWorkerShutdownTimeout bounds the wait for in-flight scene jobs after
+	// their contexts are cancelled. Image requests are cancelled immediately on
+	// shutdown, so this is normally short; the bound only exists to guarantee
+	// the worker never outlives the database handle.
+	const sceneWorkerShutdownTimeout = 20 * time.Second
+
+	var sceneWorkerCancel context.CancelFunc
+	var sceneWorkerDone <-chan struct{}
+	var sceneWorkerStopped bool
+
+	// stopSceneWorker cancels the queue and waits a bounded time for in-flight
+	// jobs to finish (their contexts are cancelled by the same signal). It
+	// returns whether the worker fully stopped. It is called explicitly on the
+	// shutdown path and again via defer on every other exit path; the guard
+	// makes repeated calls idempotent.
+	stopSceneWorker := func() bool {
+		if sceneWorkerStopped {
+			return true
+		}
+		if sceneWorkerCancel == nil {
+			sceneWorkerStopped = true
+			return true
+		}
+		sceneWorkerCancel()
+		select {
+		case <-sceneWorkerDone:
+			sceneWorkerStopped = true
+			logger.Info("scene_worker_stopped")
+		case <-time.After(sceneWorkerShutdownTimeout):
+			logger.Warn("scene_worker_shutdown_timeout", "timeout_seconds", int(sceneWorkerShutdownTimeout.Seconds()))
+		}
+		return sceneWorkerStopped
+	}
+
+	// The database may only be closed after the worker is confirmed stopped.
+	// If the bounded wait expired, Run still returns (the OS reclaims file
+	// descriptors at process exit) but the handle is deliberately left open
+	// and a tiny background goroutine closes it once the worker finishes, so
+	// the database is never closed while a worker goroutine may still write.
+	//
+	// Defer order matters: stopSceneWorker (declared after this) runs before
+	// this decision, so sceneWorkerStopped is final when this executes.
+	defer func() {
+		if sceneWorkerDone == nil || sceneWorkerStopped {
+			closeDB()
+			return
+		}
+		logger.Warn("scene_worker_db_close_deferred", "reason", "scene worker still running after shutdown timeout")
+		go func() {
+			<-sceneWorkerDone
+			closeDB()
+		}()
+	}()
+	defer stopSceneWorker()
+
+	if service.ProvidersConfigured() {
+		worker := scenes.NewWorker(
+			service,
+			cfg.SceneWorker.GenerationConcurrency,
+			scenes.DefaultQueueCapacity,
+			time.Duration(cfg.SceneWorker.RequestTimeout)*time.Second,
+			logger,
+		)
+		service.AttachWorker(worker)
+		workerCtx, cancelWorker := context.WithCancel(context.Background())
+		sceneWorkerCancel = cancelWorker
+		sceneWorkerDone = worker.Done()
+		go worker.Run(workerCtx)
+	}
+	logger.Info("scene_subsystem_status",
+		"text_configured", cfg.SceneText.Configured(),
+		"text_model", cfg.SceneText.Model,
+		"image_configured", cfg.SceneImage.Configured(),
+		"image_model", cfg.SceneImage.Model,
+		"worker_concurrency", cfg.SceneWorker.GenerationConcurrency,
+	)
+
 	authManager := auth.NewWithLimits(
 		cfg.AuthUsername,
 		cfg.AuthPassword,
@@ -120,6 +241,7 @@ func Run() error {
 		APIKeys:       apiKeyStore,
 		CallSessions:  callSessionStore,
 		Recordings:    recordingStore,
+		Scenes:        sceneService,
 	})
 
 	handler := newHandler(cfg, authManager, apiKeyManager, apiServer, logger)
@@ -160,6 +282,9 @@ func Run() error {
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("shutdown failed: %w", err)
 		}
+		// Stop the worker (cancel + bounded wait) before Run returns; the
+		// database close decision runs via the deferred call afterwards.
+		stopSceneWorker()
 		logger.Info("shutdown_completed")
 		return nil
 	case err := <-serverErr:
