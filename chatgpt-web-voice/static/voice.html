@@ -1932,7 +1932,15 @@
                   <h2 data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
                   <p id="sceneDisclaimer" class="scene-disclaimer"></p>
                 </div>
-                <img id="sceneImage" class="scene-image" alt="" />
+                <div id="sceneVisualSlot" class="scene-visual-slot">
+                  <div id="sceneParticleStage" class="scene-particle-stage" aria-hidden="true"></div>
+                  <img id="sceneImage" class="scene-image" alt="" />
+                  <div class="scene-visual-vignette" aria-hidden="true"></div>
+                  <button type="button" id="btnSceneImmersive" class="scene-immersive-button">
+                    <span class="material-symbols-rounded" aria-hidden="true">fullscreen</span>
+                    <span data-i18n="sceneImmersive">沉浸查看</span>
+                  </button>
+                </div>
                 <p id="sceneCaption" class="scene-caption"></p>
                 <div class="scene-micro-action">
                   <span class="scene-micro-action-label" data-i18n="sceneMicroActionLabel">一个可以开始的地方</span>
@@ -2084,6 +2092,18 @@
       </div>
     </form>
   </dialog>
+  <dialog id="sceneParticleDialog" class="scene-particle-dialog" aria-labelledby="sceneParticleDialogTitle">
+    <div class="scene-particle-dialog-shell">
+      <div id="sceneParticleDialogMount" class="scene-particle-dialog-mount"></div>
+      <div class="scene-particle-dialog-chrome">
+        <h2 id="sceneParticleDialogTitle" data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
+        <button type="button" id="btnSceneImmersiveClose" class="scene-particle-dialog-close" data-i18n-title="sceneImmersiveClose" data-i18n-aria="sceneImmersiveClose" title="退出沉浸查看" aria-label="退出沉浸查看">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <p class="scene-particle-dialog-hint" data-i18n="sceneImmersiveHint">移动指针感受画面的流动，按住可让粒子轻轻散开</p>
+    </div>
+  </dialog>
   <audio id="remoteAudio" autoplay playsinline webkit-playsinline></audio>
 
 <script>
@@ -2185,12 +2205,18 @@
   var sceneBlockedReason = document.getElementById('sceneBlockedReason');
   var sceneFailedMessage = document.getElementById('sceneFailedMessage');
   var sceneDisclaimer = document.getElementById('sceneDisclaimer');
+  var sceneVisualSlot = document.getElementById('sceneVisualSlot');
+  var sceneParticleStage = document.getElementById('sceneParticleStage');
   var sceneImage = document.getElementById('sceneImage');
   var sceneCaption = document.getElementById('sceneCaption');
   var sceneMicroAction = document.getElementById('sceneMicroAction');
   var btnSceneDownload = document.getElementById('btnSceneDownload');
   var btnSceneRegenerate = document.getElementById('btnSceneRegenerate');
   var btnSceneReselect = document.getElementById('btnSceneReselect');
+  var btnSceneImmersive = document.getElementById('btnSceneImmersive');
+  var sceneParticleDialog = document.getElementById('sceneParticleDialog');
+  var sceneParticleDialogMount = document.getElementById('sceneParticleDialogMount');
+  var btnSceneImmersiveClose = document.getElementById('btnSceneImmersiveClose');
 
   var pc = null;
   var previewPc = null;  var previewAudio = null;
@@ -2255,6 +2281,10 @@
   var sceneSummaryPersistTimer = 0;
   var SCENE_POLL_INTERVAL_MS = 1800;
   var sceneGenerateInFlight = false;
+  var sceneParticleVisual = null;
+  var sceneParticleModulePromise = null;
+  var sceneParticleImageURL = '';
+  var sceneParticleDialogReturnFocus = null;
   var conversationId = '';
   var parentMessageId = '';
   var voiceSessionId = '';
@@ -2579,6 +2609,9 @@
       sceneDisclaimer: '目标情境，不是未来预测',
       sceneMicroActionLabel: '一个可以开始的地方',
       sceneDownload: '下载图片',
+      sceneImmersive: '沉浸查看',
+      sceneImmersiveClose: '退出沉浸查看',
+      sceneImmersiveHint: '移动指针感受画面的流动，按住可让粒子轻轻散开',
       sceneRegenerate: '按这个时刻再生成一次',
       sceneReselect: '重新选择时刻',
       sceneRetry: '重试',
@@ -2790,6 +2823,9 @@
       sceneDisclaimer: 'A goal scene, not a prediction of the future',
       sceneMicroActionLabel: 'A place to start',
       sceneDownload: 'Download image',
+      sceneImmersive: 'Immersive view',
+      sceneImmersiveClose: 'Exit immersive view',
+      sceneImmersiveHint: 'Move to feel the flow; press and hold to gently disperse the particles',
       sceneRegenerate: 'Generate this moment again',
       sceneReselect: 'Choose another moment',
       sceneRetry: 'Retry',
@@ -3893,6 +3929,7 @@
 
   function sceneSetState(state) {
     sceneState = state;
+    if (state !== SCENE_STATE_COMPLETED) sceneDisposeParticleVisual();
     var panels = [
       ['entry', sceneStateEntry], ['loading-candidates', sceneStateLoading],
       ['candidate-selection', sceneStateSelection], ['queued', sceneStateProgress],
@@ -3921,6 +3958,7 @@
 
   function sceneHide() {
     sceneStopPolling();
+    sceneDisposeParticleVisual();
     if (sceneSummaryPersistTimer) {
       clearTimeout(sceneSummaryPersistTimer);
       sceneSummaryPersistTimer = 0;
@@ -3932,6 +3970,110 @@
     if (sceneStudioEl) {
       sceneStudioEl.hidden = true;
       document.body.removeAttribute('data-scene-state');
+    }
+  }
+
+  function sceneSetAgentVisualActive(active) {
+    if (window.PangAgentVisual && typeof window.PangAgentVisual.setActive === 'function') {
+      window.PangAgentVisual.setActive(active);
+    }
+    if (window.PangAgentVisualReady && typeof window.PangAgentVisualReady.then === 'function') {
+      window.PangAgentVisualReady.then(function (visual) {
+        if (!visual || typeof visual.setActive !== 'function') return;
+        var particlesOwnFrame = sceneParticleVisual && sceneParticleVisual.active && sceneState === SCENE_STATE_COMPLETED;
+        visual.setActive(active && !particlesOwnFrame);
+      }).catch(function () {});
+    }
+  }
+
+  function sceneReturnParticleStage() {
+    if (!sceneParticleStage || !sceneVisualSlot) return;
+    if (sceneParticleStage.parentNode !== sceneVisualSlot) {
+      sceneVisualSlot.insertBefore(sceneParticleStage, sceneImage || sceneVisualSlot.firstChild);
+    }
+    sceneParticleStage.classList.remove('is-immersive');
+    sceneVisualSlot.classList.remove('is-immersive-open');
+  }
+
+  function sceneCloseImmersive() {
+    sceneReturnParticleStage();
+    if (sceneParticleDialog && sceneParticleDialog.open) sceneParticleDialog.close();
+    var returnFocus = sceneParticleDialogReturnFocus;
+    sceneParticleDialogReturnFocus = null;
+    if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+  }
+
+  function sceneOpenImmersive() {
+    if (!sceneParticleVisual || !sceneParticleStage || !sceneParticleDialog || !sceneParticleDialogMount) return;
+    sceneParticleDialogReturnFocus = document.activeElement;
+    sceneVisualSlot.classList.add('is-immersive-open');
+    sceneParticleStage.classList.add('is-immersive');
+    sceneParticleDialogMount.appendChild(sceneParticleStage);
+    if (typeof sceneParticleDialog.showModal === 'function' && !sceneParticleDialog.open) sceneParticleDialog.showModal();
+    else sceneParticleDialog.setAttribute('open', '');
+    requestAnimationFrame(function () {
+      if (sceneParticleVisual) {
+        sceneParticleVisual.resize();
+        sceneParticleVisual.pulse({ x: 0, y: 0 }, 0.75);
+      }
+      if (btnSceneImmersiveClose) btnSceneImmersiveClose.focus({ preventScroll: true });
+    });
+  }
+
+  function sceneDisposeParticleVisual() {
+    sceneCloseImmersive();
+    if (sceneParticleVisual) sceneParticleVisual.dispose();
+    sceneParticleVisual = null;
+    sceneParticleImageURL = '';
+    window.PangSceneParticleVisual = null;
+    if (sceneVisualSlot) sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading', 'is-particle-unavailable');
+    sceneSetAgentVisualActive(true);
+  }
+
+  function sceneLoadParticleModule() {
+    if (!sceneParticleModulePromise) {
+      sceneParticleModulePromise = import('/static/scene-particle-visual/index.js').catch(function (error) {
+        sceneParticleModulePromise = null;
+        throw error;
+      });
+    }
+    return sceneParticleModulePromise;
+  }
+
+  async function sceneShowParticleImage(imageURL) {
+    if (!sceneParticleStage || !sceneVisualSlot || !imageURL) return;
+    sceneVisualSlot.classList.add('is-particle-loading');
+    sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-unavailable');
+    try {
+      var module = await sceneLoadParticleModule();
+      if (sceneState !== SCENE_STATE_COMPLETED || !sceneProject || sceneProject.image_url !== imageURL) return;
+      if (!sceneParticleVisual) {
+        sceneParticleVisual = new module.SceneParticleVisual(sceneParticleStage);
+        window.PangSceneParticleVisual = sceneParticleVisual;
+        sceneParticleStage.addEventListener('scene-particle-ready', function () {
+          if (!sceneVisualSlot) return;
+          sceneVisualSlot.classList.remove('is-particle-loading', 'is-particle-unavailable');
+          sceneVisualSlot.classList.add('is-particle-ready');
+          sceneSetAgentVisualActive(false);
+        });
+        sceneParticleStage.addEventListener('scene-particle-error', function (event) {
+          if (!sceneVisualSlot) return;
+          sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
+          sceneVisualSlot.classList.add('is-particle-unavailable');
+          sceneSetAgentVisualActive(true);
+          log('scene particle visual fail', String(event.detail && event.detail.error && event.detail.error.message || 'unknown error'));
+        });
+      }
+      if (sceneParticleImageURL === imageURL && sceneVisualSlot.classList.contains('is-particle-ready')) return;
+      sceneParticleImageURL = imageURL;
+      await sceneParticleVisual.setImage(imageURL);
+    } catch (error) {
+      if (sceneState !== SCENE_STATE_COMPLETED) return;
+      sceneParticleImageURL = '';
+      sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
+      sceneVisualSlot.classList.add('is-particle-unavailable');
+      sceneSetAgentVisualActive(true);
+      log('scene particle visual unavailable', String(error && error.message || error));
     }
   }
 
@@ -4266,6 +4408,7 @@
       sceneImage.alt = project.caption || t('sceneTitle');
     }
     sceneSetState(SCENE_STATE_COMPLETED);
+    if (project.image_url) sceneShowParticleImage(project.image_url).catch(function () {});
     sceneRenderHistory();
   }
 
@@ -7219,6 +7362,17 @@
     if (btnSceneRegenerate) btnSceneRegenerate.onclick = function () { sceneRegenerate().catch(function () {}); };
     if (btnSceneReselect) btnSceneReselect.onclick = sceneReselect;
     if (btnSceneDownload) btnSceneDownload.onclick = sceneDownload;
+    if (btnSceneImmersive) btnSceneImmersive.onclick = sceneOpenImmersive;
+    if (btnSceneImmersiveClose) btnSceneImmersiveClose.onclick = sceneCloseImmersive;
+    if (sceneParticleDialog) {
+      sceneParticleDialog.addEventListener('cancel', function (event) {
+        event.preventDefault();
+        sceneCloseImmersive();
+      });
+      sceneParticleDialog.addEventListener('click', function (event) {
+        if (event.target === sceneParticleDialog) sceneCloseImmersive();
+      });
+    }
     if (sceneSummaryInput) {
       sceneSummaryInput.addEventListener('input', function () {
         sceneUpdateGenerateButton();
@@ -7234,6 +7388,7 @@
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden && scenePollingId) scenePollNow();
     });
+    window.addEventListener('pagehide', sceneDisposeParticleVisual, { once: true });
     initializeConversationStore().catch(function () {});
     preloadSystemPrompt('personal').catch(function (error) {
       log('personal prompt preload fail', String(error && error.message || error));

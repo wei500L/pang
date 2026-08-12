@@ -253,6 +253,7 @@ class AgentVisual {
     document.body.dataset.agentVisualState = "idle";
     this.muted = false;
     this.disposed = false;
+    this.active = true;
     this.visible = !document.hidden;
     this.lastFrame = 0;
     this.frameSamples = [];
@@ -579,8 +580,20 @@ class AgentVisual {
     this.updateVisualState();
   }
 
+  setActive(active) {
+    this.active = Boolean(active);
+    if (!this.active && this.raf) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+    }
+    if (this.active) {
+      this.lastFrame = performance.now();
+      this.schedule();
+    }
+  }
+
   schedule() {
-    if (this.disposed || !this.visible || this.raf) return;
+    if (this.disposed || !this.active || !this.visible || this.raf) return;
     this.raf = requestAnimationFrame((time) => {
       this.raf = 0;
       this.render(time);
