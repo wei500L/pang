@@ -2284,6 +2284,7 @@
   var sceneParticleVisual = null;
   var sceneParticleModulePromise = null;
   var sceneParticleImageURL = '';
+  var sceneParticleRequestVersion = 0;
   var sceneParticleDialogReturnFocus = null;
   var conversationId = '';
   var parentMessageId = '';
@@ -3993,11 +3994,14 @@
     }
     sceneParticleStage.classList.remove('is-immersive');
     sceneVisualSlot.classList.remove('is-immersive-open');
+    if (sceneParticleVisual && typeof sceneParticleVisual.setImmersive === 'function') sceneParticleVisual.setImmersive(false);
+    else if (sceneParticleVisual) sceneParticleVisual.resize();
   }
 
   function sceneCloseImmersive() {
     sceneReturnParticleStage();
     if (sceneParticleDialog && sceneParticleDialog.open) sceneParticleDialog.close();
+    else if (sceneParticleDialog) sceneParticleDialog.removeAttribute('open');
     var returnFocus = sceneParticleDialogReturnFocus;
     sceneParticleDialogReturnFocus = null;
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
@@ -4009,25 +4013,53 @@
     sceneVisualSlot.classList.add('is-immersive-open');
     sceneParticleStage.classList.add('is-immersive');
     sceneParticleDialogMount.appendChild(sceneParticleStage);
+    if (typeof sceneParticleVisual.setImmersive === 'function') sceneParticleVisual.setImmersive(true);
     if (typeof sceneParticleDialog.showModal === 'function' && !sceneParticleDialog.open) sceneParticleDialog.showModal();
     else sceneParticleDialog.setAttribute('open', '');
     requestAnimationFrame(function () {
       if (sceneParticleVisual) {
         sceneParticleVisual.resize();
-        sceneParticleVisual.pulse({ x: 0, y: 0 }, 0.75);
       }
       if (btnSceneImmersiveClose) btnSceneImmersiveClose.focus({ preventScroll: true });
     });
   }
 
   function sceneDisposeParticleVisual() {
+    sceneParticleRequestVersion += 1;
     sceneCloseImmersive();
+    if (sceneParticleStage) {
+      sceneParticleStage.removeEventListener('scene-particle-ready', sceneHandleParticleReady);
+      sceneParticleStage.removeEventListener('scene-particle-error', sceneHandleParticleError);
+      sceneParticleStage.removeEventListener('scene-particle-activity', sceneHandleParticleActivity);
+    }
     if (sceneParticleVisual) sceneParticleVisual.dispose();
     sceneParticleVisual = null;
     sceneParticleImageURL = '';
     window.PangSceneParticleVisual = null;
     if (sceneVisualSlot) sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading', 'is-particle-unavailable');
     sceneSetAgentVisualActive(true);
+  }
+
+  function sceneHandleParticleReady(event) {
+    if (!sceneVisualSlot || !sceneParticleVisual || sceneState !== SCENE_STATE_COMPLETED) return;
+    if (event.detail && event.detail.url && event.detail.url !== sceneParticleImageURL) return;
+    sceneVisualSlot.classList.remove('is-particle-loading', 'is-particle-unavailable');
+    sceneVisualSlot.classList.add('is-particle-ready');
+    var particlesActive = typeof sceneParticleVisual.canRender === 'function' ? sceneParticleVisual.canRender() : sceneParticleVisual.active;
+    sceneSetAgentVisualActive(!particlesActive);
+  }
+
+  function sceneHandleParticleError(event) {
+    if (!sceneVisualSlot || sceneState !== SCENE_STATE_COMPLETED) return;
+    sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
+    sceneVisualSlot.classList.add('is-particle-unavailable');
+    sceneSetAgentVisualActive(true);
+    log('scene particle visual fail', String(event.detail && event.detail.error && event.detail.error.message || 'unknown error'));
+  }
+
+  function sceneHandleParticleActivity(event) {
+    if (sceneState !== SCENE_STATE_COMPLETED || !sceneVisualSlot || !sceneVisualSlot.classList.contains('is-particle-ready')) return;
+    sceneSetAgentVisualActive(!(event.detail && event.detail.active));
   }
 
   function sceneLoadParticleModule() {
@@ -4042,33 +4074,25 @@
 
   async function sceneShowParticleImage(imageURL) {
     if (!sceneParticleStage || !sceneVisualSlot || !imageURL) return;
+    var requestVersion = ++sceneParticleRequestVersion;
     sceneVisualSlot.classList.add('is-particle-loading');
     sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-unavailable');
     try {
       var module = await sceneLoadParticleModule();
-      if (sceneState !== SCENE_STATE_COMPLETED || !sceneProject || sceneProject.image_url !== imageURL) return;
+      if (requestVersion !== sceneParticleRequestVersion || sceneState !== SCENE_STATE_COMPLETED || !sceneProject || sceneProject.image_url !== imageURL) return;
       if (!sceneParticleVisual) {
         sceneParticleVisual = new module.SceneParticleVisual(sceneParticleStage);
         window.PangSceneParticleVisual = sceneParticleVisual;
-        sceneParticleStage.addEventListener('scene-particle-ready', function () {
-          if (!sceneVisualSlot) return;
-          sceneVisualSlot.classList.remove('is-particle-loading', 'is-particle-unavailable');
-          sceneVisualSlot.classList.add('is-particle-ready');
-          sceneSetAgentVisualActive(false);
-        });
-        sceneParticleStage.addEventListener('scene-particle-error', function (event) {
-          if (!sceneVisualSlot) return;
-          sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
-          sceneVisualSlot.classList.add('is-particle-unavailable');
-          sceneSetAgentVisualActive(true);
-          log('scene particle visual fail', String(event.detail && event.detail.error && event.detail.error.message || 'unknown error'));
-        });
+        sceneParticleStage.addEventListener('scene-particle-ready', sceneHandleParticleReady);
+        sceneParticleStage.addEventListener('scene-particle-error', sceneHandleParticleError);
+        sceneParticleStage.addEventListener('scene-particle-activity', sceneHandleParticleActivity);
       }
       if (sceneParticleImageURL === imageURL && sceneVisualSlot.classList.contains('is-particle-ready')) return;
       sceneParticleImageURL = imageURL;
       await sceneParticleVisual.setImage(imageURL);
+      if (requestVersion !== sceneParticleRequestVersion) return;
     } catch (error) {
-      if (sceneState !== SCENE_STATE_COMPLETED) return;
+      if (requestVersion !== sceneParticleRequestVersion || sceneState !== SCENE_STATE_COMPLETED) return;
       sceneParticleImageURL = '';
       sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
       sceneVisualSlot.classList.add('is-particle-unavailable');

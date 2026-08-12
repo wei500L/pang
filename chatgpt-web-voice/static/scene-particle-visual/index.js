@@ -7,10 +7,19 @@ import {
   normalizeSceneParticleUniforms,
 } from "./core.js";
 
+const PRESETS = Object.freeze({
+  still: Object.freeze({ uFlowSpeed: 0.12, uDispersion: 0.04, uDepth: 1.55, uPointSize: 2.05 }),
+  ethereal: SCENE_PARTICLE_DEFAULTS,
+  dissolve: Object.freeze({ uFlowSpeed: 0.72, uDispersion: 1.5, uDepth: 2.25, uPointSize: 2.1 }),
+});
+
 const vertexShader = /* glsl */ `
   attribute vec3 color;
   attribute vec3 aRandom;
   attribute float aOpacity;
+  attribute float aVisualWeight;
+  attribute float aEdge;
+  attribute float aLuminance;
 
   uniform float uTime;
   uniform float uFlowSpeed;
@@ -21,15 +30,21 @@ const vertexShader = /* glsl */ `
   uniform float uReveal;
   uniform float uOpacity;
   uniform float uMotionScale;
+  uniform float uLayer;
+  uniform float uHaloScale;
+  uniform float uDetailScale;
   uniform vec3 uPointer;
   uniform float uPointerStrength;
   uniform float uPressStrength;
+  uniform float uPressVelocity;
   uniform float uPulseTime;
   uniform vec3 uPulsePosition;
   uniform float uPulseStrength;
 
   varying vec3 vColor;
   varying float vOpacity;
+  varying float vVisualWeight;
+  varying float vLuminance;
 
   vec4 permute(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
   vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
@@ -80,68 +95,121 @@ const vertexShader = /* glsl */ `
     return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
   }
 
-  vec3 fluidNoise(vec3 p) {
-    return vec3(
-      snoise(p + vec3(0.0, 17.1, 3.7)),
-      snoise(p + vec3(11.4, 0.0, 8.2)),
-      snoise(p + vec3(6.3, 13.7, 0.0))
-    );
+  vec3 curlNoise(vec3 p, float epsilon) {
+    float x1 = snoise(p + vec3(epsilon, 0.0, 0.0));
+    float x0 = snoise(p - vec3(epsilon, 0.0, 0.0));
+    float y1 = snoise(p + vec3(0.0, epsilon, 0.0));
+    float y0 = snoise(p - vec3(0.0, epsilon, 0.0));
+    float dPsiDx = (x1 - x0) / (2.0 * epsilon);
+    float dPsiDy = (y1 - y0) / (2.0 * epsilon);
+    float depthBreath = snoise(p * 0.72 + vec3(13.7, -5.2, 8.1));
+    return vec3(dPsiDy, -dPsiDx, depthBreath * 0.28);
+  }
+
+  vec3 srgbToLinear(vec3 value) {
+    vec3 low = value / 12.92;
+    vec3 high = pow((value + 0.055) / 1.055, vec3(2.4));
+    return mix(low, high, step(vec3(0.04045), value));
   }
 
   void main() {
-    vColor = color;
-    vOpacity = aOpacity * uOpacity;
-    float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    vec3 linearColor = srgbToLinear(color);
+    float chroma = max(linearColor.r, max(linearColor.g, linearColor.b)) - min(linearColor.r, min(linearColor.g, linearColor.b));
+    float highlightCompression = mix(1.0, 0.72, smoothstep(0.58, 0.96, aLuminance) * (1.0 - smoothstep(0.035, 0.2, chroma)));
+    vColor = linearColor * highlightCompression;
+    vVisualWeight = aVisualWeight;
+    vLuminance = aLuminance;
+
     vec3 displaced = position;
-    displaced.z += (luminance - 0.28) * uDepth;
+    float midtoneVolume = exp(-pow((aLuminance - 0.34) * 2.45, 2.0));
+    float darkRecess = 1.0 - smoothstep(0.0, 0.22, aLuminance);
+    float brightLimit = smoothstep(0.5, 0.9, aLuminance);
+    float depthShape = midtoneVolume * (0.32 + aVisualWeight * 0.42) - darkRecess * 0.28 + brightLimit * 0.08;
+    displaced.z += clamp(depthShape * uDepth, -0.72, 0.82);
 
     float driftTime = uTime * uFlowSpeed * uMotionScale;
-    vec3 noisePosition = position * 0.56 + aRandom * 1.35 + vec3(0.0, driftTime, driftTime * 0.43);
-    vec3 flow = fluidNoise(noisePosition);
-    float randomWeight = 0.58 + dot(abs(aRandom), vec3(0.14));
-    displaced += flow * uDispersion * randomWeight;
+    vec3 flowPosition = position * 0.31 + vec3(0.0, driftTime * 0.16, driftTime * 0.08) + aRandom * 0.045;
+    vec3 broadCurl = curlNoise(flowPosition, 0.17);
+    vec3 detailCurl = vec3(
+      sin(flowPosition.y * 3.7 + driftTime * 0.09),
+      cos(flowPosition.x * 3.2 - driftTime * 0.08),
+      sin((flowPosition.x + flowPosition.y) * 2.6 + driftTime * 0.05)
+    ) * (0.035 * uDetailScale);
+    vec3 flow = normalize(broadCurl + vec3(0.0001)) * min(1.15, length(broadCurl)) + detailCurl;
+    float vulnerability = clamp((1.0 - aVisualWeight) * 0.9 + aEdge * (0.16 + (1.0 - aVisualWeight) * 0.34), 0.05, 1.0);
+    float dispersionCurve = uDispersion * uDispersion * (0.16 + uDispersion * 0.08);
+    float subjectGate = smoothstep(0.16, 1.15, uDispersion + vulnerability * 0.48);
+    float flowAmount = dispersionCurve * mix(0.16, 1.0, vulnerability) * subjectGate;
+    displaced += flow * flowAmount;
+    displaced.z += broadCurl.z * uDispersion * 0.026 * (0.24 + vulnerability);
 
-    float enter = 1.0 - uReveal;
-    displaced += aRandom * enter * (0.42 + length(position.xy) * 0.12);
-    displaced.z += enter * (1.2 + aRandom.z * 0.8);
+    float localReveal = smoothstep(0.02 + uLayer * 0.2 + (1.0 - aVisualWeight) * 0.12, 0.72 + uLayer * 0.22, uReveal);
+    float enter = 1.0 - localReveal;
+    vec3 gatherDirection = normalize(vec3(position.xy * 0.38, 1.1 + aRandom.z * 0.22));
+    displaced -= vec3(position.xy, 0.0) * enter * (0.64 + uLayer * 0.12);
+    displaced += gatherDirection * enter * (0.48 + length(position.xy) * 0.08 + uLayer * 0.32);
+    displaced.z += enter * (1.0 + (1.0 - aVisualWeight) * 0.72 + aRandom.z * 0.2);
 
     vec2 pointerDelta = displaced.xy - uPointer.xy;
     float pointerDistance = length(pointerDelta);
-    float pointerFalloff = exp(-pointerDistance * pointerDistance * 3.2);
-    vec2 pointerDirection = pointerDistance > 0.0001 ? pointerDelta / pointerDistance : vec2(0.0);
-    float ripple = sin(pointerDistance * 16.0 - uTime * 5.0) * 0.055;
-    displaced.xy += pointerDirection * pointerFalloff * (uPointerStrength * ripple + uPressStrength * 0.28);
-    displaced.z += pointerFalloff * (uPointerStrength * 0.13 + uPressStrength * 0.5) * (0.55 + aRandom.z * 0.45);
+    float pointerFalloff = exp(-pointerDistance * pointerDistance * 2.1);
+    vec2 radial = pointerDistance > 0.0001 ? pointerDelta / pointerDistance : vec2(0.0);
+    vec2 tangent = vec2(-radial.y, radial.x);
+    float pointerNoise = 1.0;
+    if (uPointerStrength + uPressStrength > 0.01) pointerNoise = 0.82 + snoise(vec3(pointerDelta * 0.72, uTime * 0.12)) * 0.18;
+    displaced.xy += tangent * pointerFalloff * uPointerStrength * 0.045 * pointerNoise;
+    displaced.xy += (tangent * (0.34 + vulnerability * 0.66) + radial * 0.18) * pointerFalloff * uPressStrength * 0.34;
+    displaced.z += pointerFalloff * (uPointerStrength * 0.035 + uPressStrength * 0.28 + uPressVelocity * 0.04) * (0.55 + vulnerability * 0.45);
 
     float pulseAge = max(0.0, uTime - uPulseTime);
-    float pulseRadius = pulseAge * 1.35;
-    float pulseBand = exp(-pow((length(displaced.xy - uPulsePosition.xy) - pulseRadius) * 8.0, 2.0));
-    displaced.z += pulseBand * uPulseStrength * exp(-pulseAge * 1.8) * 0.38;
+    float pulseRadius = pulseAge * 0.78;
+    float pulseWarp = 0.0;
+    if (pulseAge < 4.0 && uPulseStrength > 0.01) pulseWarp = snoise(vec3(displaced.xy * 0.5, pulseAge * 0.16)) * 0.08;
+    float warpedDistance = length(displaced.xy - uPulsePosition.xy) + pulseWarp;
+    float pulseBand = exp(-pow((warpedDistance - pulseRadius) / (0.22 + pulseAge * 0.08), 2.0));
+    float pulseDecay = exp(-pulseAge * 1.45) * uPulseStrength;
+    displaced.xy += tangent * pulseBand * pulseDecay * 0.035;
+    displaced.z += pulseBand * pulseDecay * 0.12;
 
+    displaced.z = clamp(displaced.z, -1.05, 1.18);
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    float perspectiveScale = 6.0 / max(0.75, -mvPosition.z);
-    gl_PointSize = clamp(uPointSize * uPixelRatio * perspectiveScale * (0.72 + luminance * 0.5), 1.0, 22.0);
+    float perspectiveScale = clamp(7.0 / max(2.0, -mvPosition.z), 0.62, 1.72);
+    float structureSize = mix(0.82, 1.18, aVisualWeight) * mix(0.94, 1.12, aEdge);
+    float layerScale = mix(1.0, 2.25 * uHaloScale, uLayer);
+    gl_PointSize = clamp(uPointSize * uPixelRatio * perspectiveScale * structureSize * layerScale * 1.22, 1.0, mix(16.0, 26.0, uLayer));
+    float densityAlpha = mix(0.4, 1.0, aVisualWeight);
+    vOpacity = aOpacity * densityAlpha * uOpacity * localReveal;
   }
 `;
 
 const fragmentShader = /* glsl */ `
+  uniform float uLayer;
+  uniform float uHaloAlpha;
+
   varying vec3 vColor;
   varying float vOpacity;
+  varying float vVisualWeight;
+  varying float vLuminance;
 
   void main() {
-    float distanceToCenter = length(gl_PointCoord - vec2(0.5));
-    if (distanceToCenter > 0.5) discard;
-    float feather = 1.0 - smoothstep(0.26, 0.5, distanceToCenter);
-    float core = 1.0 - smoothstep(0.0, 0.2, distanceToCenter);
-    float glow = feather * 0.42 + core * 0.36;
-    gl_FragColor = vec4(vColor * (0.78 + core * 0.44), glow * vOpacity);
+    vec2 centered = gl_PointCoord - vec2(0.5);
+    float radius = length(centered);
+    if (radius > 0.5) discard;
+    float coreShape = smoothstep(0.5, 0.16, radius);
+    float softCore = exp(-radius * radius * 22.0);
+    float haloShape = exp(-radius * radius * 10.5) * smoothstep(0.5, 0.04, radius);
+    float shape = mix(coreShape * 0.78 + softCore * 0.3, haloShape, uLayer);
+    float layerAlpha = mix(0.92, uHaloAlpha * mix(0.52, 1.0, vVisualWeight), uLayer);
+    float alpha = shape * vOpacity * layerAlpha;
+    if (alpha < 0.008) discard;
+    vec3 coreColor = vColor * mix(1.02, 1.14, vVisualWeight);
+    vec3 haloColor = vColor * mix(0.78, 1.02, smoothstep(0.08, 0.7, vLuminance));
+    gl_FragColor = vec4(mix(coreColor, haloColor, uLayer), alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
-
-function waitForTransition(duration) {
-  return new Promise((resolve) => window.setTimeout(resolve, duration));
-}
 
 function dispatch(container, name, detail = {}) {
   container.dispatchEvent(new CustomEvent(name, { detail }));
@@ -161,6 +229,7 @@ async function decodeBlob(blob, signal) {
     image.decoding = "async";
     image.src = objectURL;
     await image.decode();
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     return image;
   } finally {
     URL.revokeObjectURL(objectURL);
@@ -180,6 +249,43 @@ function imageToImageData(image) {
   return context.getImageData(0, 0, width, height);
 }
 
+function createSharedUniforms(values, reducedMotion) {
+  return {
+    uTime: { value: 0 },
+    uFlowSpeed: { value: values.uFlowSpeed },
+    uDispersion: { value: values.uDispersion },
+    uDepth: { value: values.uDepth },
+    uPointSize: { value: values.uPointSize },
+    uPixelRatio: { value: 1 },
+    uReveal: { value: reducedMotion ? 1 : 0 },
+    uOpacity: { value: 1 },
+    uMotionScale: { value: reducedMotion ? 0 : 1 },
+    uHaloScale: { value: 1 },
+    uHaloAlpha: { value: 0.24 },
+    uDetailScale: { value: 1 },
+    uPointer: { value: new THREE.Vector3() },
+    uPointerStrength: { value: 0 },
+    uPressStrength: { value: 0 },
+    uPressVelocity: { value: 0 },
+    uPulseTime: { value: -100 },
+    uPulsePosition: { value: new THREE.Vector3() },
+    uPulseStrength: { value: 0 },
+  };
+}
+
+function createLayerMaterial(sharedUniforms, layer) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...sharedUniforms, uLayer: { value: layer } },
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: layer > 0.5 ? THREE.AdditiveBlending : THREE.NormalBlending,
+    toneMapped: true,
+  });
+}
+
 export class SceneParticleVisual {
   constructor(container, options = {}) {
     if (!container) throw new TypeError("SceneParticleVisual requires a container");
@@ -188,46 +294,70 @@ export class SceneParticleVisual {
     this.reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.reducedMotion = this.reducedMotionQuery.matches;
     this.active = true;
-    this.visible = !document.hidden;
+    this.pageVisible = !document.hidden;
+    this.intersecting = true;
     this.disposed = false;
+    this.contextLost = false;
+    this.immersive = false;
     this.raf = 0;
     this.lastFrame = 0;
     this.transitionStartedAt = 0;
-    this.fadeOutStartedAt = 0;
-    this.fadeOutDuration = 0;
     this.pointerTarget = 0;
     this.pointerValue = 0;
     this.pressTarget = 0;
     this.pressValue = 0;
+    this.pressVelocity = 0;
     this.parallaxTarget = new THREE.Vector2();
     this.parallax = new THREE.Vector2();
     this.loadVersion = 0;
     this.loadController = null;
     this.currentURL = "";
+    this.lastImageData = null;
     this.particleCount = 0;
     this.worldWidth = 6;
     this.worldHeight = 4;
     this.uniformValues = normalizeSceneParticleUniforms(options.uniforms || {});
-    this.step = Number.isFinite(Number(options.step)) ? Math.max(1, Math.floor(Number(options.step))) : chooseSceneParticleStep({
+    this.baseStep = Number.isFinite(Number(options.step)) ? Math.max(1, Math.floor(Number(options.step))) : chooseSceneParticleStep({
       mobile: window.matchMedia("(max-width: 700px), (pointer: coarse)").matches,
       reducedMotion: this.reducedMotion,
       deviceMemory: navigator.deviceMemory,
       hardwareConcurrency: navigator.hardwareConcurrency,
     });
+    this.step = this.baseStep;
+    this.qualityLevel = 0;
+    this.qualityLabel = "high";
+    this.dprScale = 1;
+    this.haloEnabled = true;
+    this.detailScale = 1;
+    this.frameSamples = [];
+    this.slowWindows = 0;
+    this.lastQualityChange = 0;
+    this.fps = 0;
+
     this.onVisibility = () => {
-      this.visible = !document.hidden;
-      if (this.visible) {
-        this.lastFrame = performance.now();
-        this.schedule();
+      this.pageVisible = !document.hidden;
+      if (this.pageVisible) this.resumeClock();
+      else this.cancelFrame();
+      this.dispatchActivity();
+    };
+    this.onReducedMotion = (event) => {
+      this.reducedMotion = event.matches;
+      if (this.uniforms) {
+        this.uniforms.uMotionScale.value = this.reducedMotion ? 0 : 1;
+        this.uniforms.uReveal.value = 1;
       }
+      this.schedule();
     };
     this.onContextLost = (event) => {
       event.preventDefault();
-      this.setActive(false);
+      this.contextLost = true;
+      this.cancelFrame();
       this.container.classList.remove("is-ready");
       this.container.classList.add("is-unavailable");
       dispatch(this.container, "scene-particle-error", { error: new Error("WebGL context lost") });
+      this.dispatchActivity();
     };
+    this.onContextRestored = () => this.restoreContext();
     this.onPointerMove = (event) => this.handlePointerMove(event);
     this.onPointerEnter = (event) => this.handlePointerMove(event);
     this.onPointerLeave = () => {
@@ -236,7 +366,7 @@ export class SceneParticleVisual {
       this.parallaxTarget.set(0, 0);
     };
     this.onPointerDown = (event) => {
-      if (event.pointerType === "touch" && !this.container.closest(".scene-particle-dialog[open]")) return;
+      if (event.pointerType === "touch" && !this.immersive) return;
       this.handlePointerMove(event);
       this.pressTarget = 1;
       this.container.setPointerCapture?.(event.pointerId);
@@ -245,62 +375,101 @@ export class SceneParticleVisual {
       this.pressTarget = 0;
       if (this.container.hasPointerCapture?.(event.pointerId)) this.container.releasePointerCapture(event.pointerId);
     };
+
     this.initRenderer();
-    document.addEventListener("visibilitychange", this.onVisibility);
+    this.bindLifecycle();
     this.bindInteraction();
     this.createDebugPanel();
+  }
+
+  bindLifecycle() {
+    document.addEventListener("visibilitychange", this.onVisibility);
+    this.reducedMotionQuery.addEventListener?.("change", this.onReducedMotion);
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(this.container);
+    if (typeof IntersectionObserver === "function") {
+      this.intersectionObserver = new IntersectionObserver((entries) => {
+        const entry = entries[entries.length - 1];
+        this.intersecting = Boolean(entry?.isIntersecting && entry.intersectionRatio > 0);
+        if (this.intersecting) this.resumeClock();
+        else this.cancelFrame();
+        this.dispatchActivity();
+      }, { threshold: [0, 0.01] });
+      this.intersectionObserver.observe(this.container);
+    }
   }
 
   initRenderer() {
     const probe = document.createElement("canvas");
     if (!window.WebGL2RenderingContext || !probe.getContext("webgl2")) throw new Error("WebGL2 is unavailable");
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(33, 1, 0.1, 30);
-    this.camera.position.set(0, 0, 7.5);
+    this.camera = new THREE.PerspectiveCamera(33, 1, 0.1, 40);
+    this.camera.position.set(0, 0, 8);
     this.group = new THREE.Group();
     this.scene.add(this.group);
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: "high-performance" });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.domElement.setAttribute("aria-hidden", "true");
     this.renderer.domElement.addEventListener("webglcontextlost", this.onContextLost, false);
+    this.renderer.domElement.addEventListener("webglcontextrestored", this.onContextRestored, false);
     this.container.appendChild(this.renderer.domElement);
-
-    this.uniforms = {
-      uTime: { value: 0 },
-      uFlowSpeed: { value: this.uniformValues.uFlowSpeed },
-      uDispersion: { value: this.uniformValues.uDispersion },
-      uDepth: { value: this.uniformValues.uDepth },
-      uPointSize: { value: this.uniformValues.uPointSize },
-      uPixelRatio: { value: 1 },
-      uReveal: { value: this.reducedMotion ? 1 : 0 },
-      uOpacity: { value: 1 },
-      uMotionScale: { value: this.reducedMotion ? 0 : 1 },
-      uPointer: { value: new THREE.Vector3() },
-      uPointerStrength: { value: 0 },
-      uPressStrength: { value: 0 },
-      uPulseTime: { value: -100 },
-      uPulsePosition: { value: new THREE.Vector3() },
-      uPulseStrength: { value: 0 },
-    };
-    this.material = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader,
-      fragmentShader,
-      transparent: true,
-      depthWrite: false,
-      depthTest: true,
-      blending: THREE.AdditiveBlending,
-      toneMapped: true,
-    });
-    this.points = new THREE.Points(new THREE.BufferGeometry(), this.material);
-    this.group.add(this.points);
-    this.geometry = this.points.geometry;
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(this.container);
+    this.uniforms = createSharedUniforms(this.uniformValues, this.reducedMotion);
+    this.geometry = new THREE.BufferGeometry();
+    this.coreMaterial = createLayerMaterial(this.uniforms, 0);
+    this.haloMaterial = createLayerMaterial(this.uniforms, 1);
+    this.corePoints = new THREE.Points(this.geometry, this.coreMaterial);
+    this.haloPoints = new THREE.Points(this.geometry, this.haloMaterial);
+    this.corePoints.renderOrder = 1;
+    this.haloPoints.renderOrder = 2;
+    this.group.add(this.corePoints, this.haloPoints);
+    this.applyQualitySettings();
     this.resize();
+  }
+
+  releaseRenderResources({ removeCanvas = true } = {}) {
+    for (const transition of this.outgoingLayers || []) {
+      transition.core?.material.dispose();
+      transition.halo?.material.dispose();
+      transition.geometry?.dispose();
+      transition.group?.removeFromParent();
+    }
+    this.outgoingLayers = [];
+    this.geometry?.dispose();
+    this.coreMaterial?.dispose();
+    this.haloMaterial?.dispose();
+    if (this.renderer?.domElement) {
+      this.renderer.domElement.removeEventListener("webglcontextlost", this.onContextLost);
+      this.renderer.domElement.removeEventListener("webglcontextrestored", this.onContextRestored);
+      if (removeCanvas) this.renderer.domElement.remove();
+    }
+    this.renderer?.dispose();
+  }
+
+  async restoreContext() {
+    if (this.disposed) return;
+    try {
+      this.releaseRenderResources();
+      this.initRenderer();
+      if (this.lastImageData) {
+        const attributes = buildParticleAttributes(this.lastImageData, { step: this.step, worldHeight: 4 });
+        this.installGeometry(attributes, { transition: false });
+        this.uniforms.uReveal.value = 1;
+        this.container.classList.remove("is-unavailable", "is-loading");
+        this.container.classList.add("is-ready");
+        dispatch(this.container, "scene-particle-ready", { count: attributes.count, step: attributes.step, url: this.currentURL, restored: true });
+      }
+      this.contextLost = false;
+      this.resumeClock();
+      this.dispatchActivity();
+    } catch (error) {
+      this.contextLost = true;
+      this.container.classList.remove("is-ready");
+      this.container.classList.add("is-unavailable");
+      dispatch(this.container, "scene-particle-error", { error });
+    }
   }
 
   bindInteraction() {
@@ -314,7 +483,7 @@ export class SceneParticleVisual {
 
   handlePointerMove(event) {
     if (!this.geometry || !this.particleCount || this.reducedMotion) return;
-    if (event.pointerType === "touch" && !this.container.closest(".scene-particle-dialog[open]")) return;
+    if (event.pointerType === "touch" && !this.immersive) return;
     const rect = this.container.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const ndc = new THREE.Vector2(
@@ -325,11 +494,9 @@ export class SceneParticleVisual {
     this.pointerPlane ||= new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     this.pointerIntersection ||= new THREE.Vector3();
     this.raycaster.setFromCamera(ndc, this.camera);
-    if (this.raycaster.ray.intersectPlane(this.pointerPlane, this.pointerIntersection)) {
-      this.uniforms.uPointer.value.copy(this.pointerIntersection);
-    }
+    if (this.raycaster.ray.intersectPlane(this.pointerPlane, this.pointerIntersection)) this.uniforms.uPointer.value.copy(this.pointerIntersection);
     this.pointerTarget = 1;
-    this.parallaxTarget.set(ndc.y * 0.025, ndc.x * 0.045);
+    this.parallaxTarget.set(ndc.y * 0.018, ndc.x * 0.032);
   }
 
   async setImage(url, options = {}) {
@@ -346,7 +513,7 @@ export class SceneParticleVisual {
       if (!response.ok) throw new Error(`scene image ${response.status}`);
       const blob = await response.blob();
       const image = await decodeBlob(blob, signal);
-      if (signal.aborted || version !== this.loadVersion) {
+      if (signal.aborted || version !== this.loadVersion || this.disposed) {
         image.close?.();
         return this;
       }
@@ -357,21 +524,16 @@ export class SceneParticleVisual {
         alphaThreshold: options.alphaThreshold,
         worldHeight: 4,
       });
-      if (signal.aborted || version !== this.loadVersion) return this;
-      if (this.particleCount && !this.reducedMotion) {
-        this.fadeOutStartedAt = performance.now();
-        this.fadeOutDuration = 180;
-        await waitForTransition(this.fadeOutDuration);
-        if (signal.aborted || version !== this.loadVersion) return this;
-      }
-      this.installGeometry(attributes);
+      if (signal.aborted || version !== this.loadVersion || this.disposed) return this;
+      this.lastImageData = imageData;
+      this.installGeometry(attributes, { transition: Boolean(this.particleCount && !this.reducedMotion) });
+      if (signal.aborted || version !== this.loadVersion || this.disposed) return this;
       this.currentURL = nextURL;
       this.container.dataset.particleCount = String(attributes.count);
       this.container.dataset.particleStep = String(attributes.step);
-      this.container.classList.remove("is-loading");
+      this.container.classList.remove("is-loading", "is-unavailable");
       this.container.classList.add("is-ready");
       this.transitionStartedAt = performance.now();
-      this.fadeOutDuration = 0;
       this.uniforms.uOpacity.value = 1;
       this.uniforms.uReveal.value = this.reducedMotion ? 1 : 0;
       this.updateDebugPanel();
@@ -379,7 +541,7 @@ export class SceneParticleVisual {
       dispatch(this.container, "scene-particle-ready", { count: attributes.count, step: attributes.step, url: nextURL });
       return this;
     } catch (error) {
-      if (error?.name === "AbortError" || version !== this.loadVersion) return this;
+      if (error?.name === "AbortError" || version !== this.loadVersion || this.disposed) return this;
       this.container.classList.remove("is-loading", "is-ready");
       this.container.classList.add("is-unavailable");
       dispatch(this.container, "scene-particle-error", { error });
@@ -387,28 +549,50 @@ export class SceneParticleVisual {
     }
   }
 
-  installGeometry(attributes) {
+  installGeometry(attributes, { transition = true } = {}) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(attributes.positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(attributes.colors, 3));
     geometry.setAttribute("aRandom", new THREE.BufferAttribute(attributes.randoms, 3));
     geometry.setAttribute("aOpacity", new THREE.BufferAttribute(attributes.opacities, 1));
+    geometry.setAttribute("aVisualWeight", new THREE.BufferAttribute(attributes.visualWeights, 1));
+    geometry.setAttribute("aEdge", new THREE.BufferAttribute(attributes.edges, 1));
+    geometry.setAttribute("aLuminance", new THREE.BufferAttribute(attributes.luminances, 1));
     geometry.computeBoundingSphere();
+
     const previous = this.geometry;
+    if (transition && previous?.getAttribute("position")?.count) this.createOutgoingLayers(previous);
+    else previous?.dispose();
     this.geometry = geometry;
-    this.points.geometry = geometry;
+    this.corePoints.geometry = geometry;
+    this.haloPoints.geometry = geometry;
     this.particleCount = attributes.count;
     this.step = attributes.step;
     this.worldWidth = attributes.worldWidth;
     this.worldHeight = attributes.worldHeight;
-    previous?.dispose();
     this.resize();
+  }
+
+  createOutgoingLayers(geometry) {
+    this.outgoingLayers ||= [];
+    const uniforms = createSharedUniforms(this.uniformValues, false);
+    uniforms.uReveal.value = 1;
+    uniforms.uDispersion.value = Math.max(0.7, this.uniformValues.uDispersion);
+    const coreMaterial = createLayerMaterial(uniforms, 0);
+    const haloMaterial = createLayerMaterial(uniforms, 1);
+    const core = new THREE.Points(geometry, coreMaterial);
+    const halo = new THREE.Points(geometry, haloMaterial);
+    const group = new THREE.Group();
+    group.add(core, halo);
+    this.scene.add(group);
+    this.outgoingLayers.push({ group, geometry, core, halo, uniforms, startedAt: performance.now(), duration: 720 });
   }
 
   setUniforms(values = {}) {
     this.uniformValues = normalizeSceneParticleUniforms(values, this.uniformValues);
     for (const key of Object.keys(SCENE_PARTICLE_DEFAULTS)) this.uniforms[key].value = this.uniformValues[key];
     this.updateDebugPanel();
+    this.schedule();
     return this.getUniforms();
   }
 
@@ -416,19 +600,28 @@ export class SceneParticleVisual {
     return { ...this.uniformValues };
   }
 
+  setPreset(name) {
+    const preset = PRESETS[String(name || "")];
+    if (!preset) throw new RangeError(`unknown scene particle preset: ${name}`);
+    this.preset = String(name);
+    return this.setUniforms(preset);
+  }
+
   setActive(active) {
     this.active = Boolean(active);
-    if (!this.active && this.raf) {
-      cancelAnimationFrame(this.raf);
-      this.raf = 0;
-    }
-    if (this.active) {
-      this.lastFrame = performance.now();
-      this.schedule();
-    }
+    if (!this.active) this.cancelFrame();
+    else this.resumeClock();
+    this.dispatchActivity();
+  }
+
+  setImmersive(immersive) {
+    this.immersive = Boolean(immersive);
+    this.resize();
+    if (this.immersive && !this.reducedMotion) this.pulse({ x: 0, y: 0 }, 0.42);
   }
 
   pulse(position = { x: 0, y: 0 }, strength = 0.6) {
+    if (!this.uniforms) return;
     const x = Number(position.x ?? position[0] ?? 0);
     const y = Number(position.y ?? position[1] ?? 0);
     this.uniforms.uPulsePosition.value.set(Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0, 0);
@@ -442,50 +635,146 @@ export class SceneParticleVisual {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     const mobile = width < 700;
-    const dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5);
+    const maxDpr = mobile ? 1.25 : 1.5;
+    const dpr = Math.max(0.75, Math.min(window.devicePixelRatio || 1, maxDpr) * this.dprScale);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
     const verticalDistance = (this.worldHeight * 0.5) / Math.tan(halfFov);
     const horizontalDistance = (this.worldWidth * 0.5) / (Math.tan(halfFov) * this.camera.aspect);
-    this.camera.position.z = Math.max(verticalDistance, horizontalDistance) * 1.12;
+    const fitMargin = this.immersive ? 1.1 : 1.08;
+    this.camera.position.z = Math.max(4.5, Math.max(verticalDistance, horizontalDistance) * fitMargin + 1.18);
+    this.camera.near = Math.max(0.1, this.camera.position.z - 4.0);
+    this.camera.far = this.camera.position.z + 5.0;
     this.camera.updateProjectionMatrix();
     this.uniforms.uPixelRatio.value = dpr;
+    this.currentDpr = dpr;
+    this.updateDebugPanel();
+  }
+
+  canRender() {
+    return !this.disposed && !this.contextLost && this.active && this.pageVisible && this.intersecting && this.particleCount > 0;
+  }
+
+  dispatchActivity() {
+    dispatch(this.container, "scene-particle-activity", { active: this.canRender() });
+  }
+
+  cancelFrame() {
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0;
+  }
+
+  resumeClock() {
+    this.lastFrame = performance.now();
+    this.schedule();
   }
 
   schedule() {
-    if (this.disposed || !this.active || !this.visible || !this.particleCount || this.raf) return;
+    if (!this.canRender() || this.raf) return;
     this.raf = requestAnimationFrame((time) => {
       this.raf = 0;
       this.render(time);
-      this.schedule();
+      if (!this.reducedMotion || this.outgoingLayers?.length) this.schedule();
     });
   }
 
   render(timestamp) {
     if (!this.renderer || !this.scene || !this.camera || !this.particleCount) return;
-    const dt = Math.min(0.05, Math.max(1 / 240, (timestamp - this.lastFrame) / 1000 || 1 / 60));
+    const frameMs = Math.min(80, Math.max(1, timestamp - this.lastFrame || 16.67));
+    const dt = Math.min(0.05, Math.max(1 / 240, frameMs / 1000));
     this.lastFrame = timestamp;
-    const smoothing = 1 - Math.exp(-dt * 8);
-    this.pointerValue += (this.pointerTarget - this.pointerValue) * smoothing;
-    this.pressValue += (this.pressTarget - this.pressValue) * smoothing;
-    this.parallax.lerp(this.parallaxTarget, 1 - Math.exp(-dt * 5));
+    const pointerSmoothing = 1 - Math.exp(-dt * 7);
+    this.pointerValue += (this.pointerTarget - this.pointerValue) * pointerSmoothing;
+    const springAcceleration = (this.pressTarget - this.pressValue) * 34 - this.pressVelocity * 8.5;
+    this.pressVelocity += springAcceleration * dt;
+    this.pressValue += this.pressVelocity * dt;
+    this.pressValue = THREE.MathUtils.clamp(this.pressValue, -0.08, 1.08);
+    this.parallax.lerp(this.parallaxTarget, 1 - Math.exp(-dt * 4));
     this.uniforms.uTime.value = timestamp / 1000;
     this.uniforms.uPointerStrength.value = this.reducedMotion ? 0 : this.pointerValue;
-    this.uniforms.uPressStrength.value = this.reducedMotion ? 0 : this.pressValue;
+    this.uniforms.uPressStrength.value = this.reducedMotion ? 0 : Math.max(0, this.pressValue);
+    this.uniforms.uPressVelocity.value = this.reducedMotion ? 0 : this.pressVelocity;
     if (!this.reducedMotion) {
       const elapsed = Math.max(0, timestamp - this.transitionStartedAt);
-      const progress = Math.min(1, elapsed / 1800);
+      const progress = Math.min(1, elapsed / 2050);
       this.uniforms.uReveal.value = 1 - Math.pow(1 - progress, 3);
-      this.group.rotation.x = this.parallax.x + Math.sin(timestamp * 0.00013) * 0.012;
-      this.group.rotation.y = this.parallax.y + Math.sin(timestamp * 0.00017) * 0.018;
+      const drift = this.immersive ? 1 : 0.42;
+      this.group.rotation.x = this.parallax.x + Math.sin(timestamp * 0.00009) * 0.006 * drift;
+      this.group.rotation.y = this.parallax.y + Math.sin(timestamp * 0.00011) * 0.009 * drift;
     }
-    if (this.fadeOutDuration > 0) {
-      const fade = Math.min(1, (timestamp - this.fadeOutStartedAt) / this.fadeOutDuration);
-      this.uniforms.uOpacity.value = 1 - fade;
-    }
+    this.updateOutgoingLayers(timestamp);
     this.renderer.render(this.scene, this.camera);
+    this.monitorPerformance(frameMs, timestamp);
+  }
+
+  updateOutgoingLayers(timestamp) {
+    if (!this.outgoingLayers?.length) return;
+    this.outgoingLayers = this.outgoingLayers.filter((transition) => {
+      const progress = Math.min(1, (timestamp - transition.startedAt) / transition.duration);
+      transition.uniforms.uTime.value = timestamp / 1000;
+      transition.uniforms.uOpacity.value = 1 - progress * progress;
+      transition.uniforms.uDispersion.value = 0.7 + progress * 1.1;
+      transition.group.position.z = -progress * 0.18;
+      if (progress < 1) return true;
+      transition.core.material.dispose();
+      transition.halo.material.dispose();
+      transition.geometry.dispose();
+      transition.group.removeFromParent();
+      return false;
+    });
+  }
+
+  monitorPerformance(frameMs, timestamp) {
+    if (this.reducedMotion || timestamp - this.transitionStartedAt < 2500) return;
+    this.frameSamples.push(frameMs);
+    if (this.frameSamples.length > 120) this.frameSamples.shift();
+    if (this.frameSamples.length < 90) return;
+    const sorted = [...this.frameSamples].sort((a, b) => a - b);
+    const trimmed = sorted.slice(5, -5);
+    const average = trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length;
+    this.fps = 1000 / average;
+    if (average > 22.5) this.slowWindows += 1;
+    else this.slowWindows = Math.max(0, this.slowWindows - 1);
+    this.frameSamples.length = 0;
+    if (this.slowWindows >= 3 && timestamp - this.lastQualityChange > 4500) {
+      this.slowWindows = 0;
+      this.degradeQuality();
+      this.lastQualityChange = timestamp;
+    }
+    this.updateDebugPanel();
+  }
+
+  degradeQuality() {
+    if (this.qualityLevel >= 4) return;
+    this.qualityLevel += 1;
+    if (this.qualityLevel === 1) this.dprScale = 0.78;
+    else if (this.qualityLevel === 2) {
+      this.haloEnabled = false;
+      this.uniforms.uHaloAlpha.value = 0.12;
+      this.uniforms.uHaloScale.value = 0.78;
+    } else if (this.qualityLevel === 3) {
+      this.detailScale = 0;
+    } else if (this.qualityLevel === 4 && this.lastImageData) {
+      const nextStep = Math.min(10, this.step + 2);
+      const attributes = buildParticleAttributes(this.lastImageData, { step: nextStep, worldHeight: 4 });
+      this.installGeometry(attributes, { transition: false });
+      this.container.dataset.particleCount = String(attributes.count);
+      this.container.dataset.particleStep = String(attributes.step);
+    }
+    this.qualityLabel = ["high", "balanced", "core", "low-detail", "reduced-density"][this.qualityLevel];
+    this.applyQualitySettings();
+    this.resize();
+  }
+
+  applyQualitySettings() {
+    if (!this.uniforms) return;
+    this.uniforms.uDetailScale.value = this.detailScale;
+    this.uniforms.uHaloScale.value = this.haloEnabled ? 1 : 0.78;
+    this.uniforms.uHaloAlpha.value = this.haloEnabled ? 0.24 : 0.1;
+    if (this.haloPoints) this.haloPoints.visible = this.haloEnabled;
+    this.updateDebugPanel();
   }
 
   createDebugPanel() {
@@ -518,7 +807,7 @@ export class SceneParticleVisual {
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
-    reset.onclick = () => this.setUniforms(SCENE_PARTICLE_DEFAULTS);
+    reset.onclick = () => this.setPreset("ethereal");
     const pause = document.createElement("button");
     pause.type = "button";
     pause.textContent = "Pause";
@@ -536,7 +825,7 @@ export class SceneParticleVisual {
   updateDebugPanel() {
     if (!this.debugPanel) return;
     for (const [key, input] of Object.entries(this.debugInputs)) input.value = String(this.uniformValues[key]);
-    this.debugCount.textContent = `${this.particleCount.toLocaleString()} particles · step ${this.step}`;
+    this.debugCount.textContent = `${Math.round(this.fps || 0)} FPS · DPR ${(this.currentDpr || 1).toFixed(2)} · ${this.qualityLabel} · Core on / Halo ${this.haloEnabled ? "on" : "off"} · ${this.particleCount.toLocaleString()} particles · step ${this.step}`;
   }
 
   dispose() {
@@ -544,23 +833,25 @@ export class SceneParticleVisual {
     this.disposed = true;
     this.loadVersion += 1;
     this.loadController?.abort();
-    if (this.raf) cancelAnimationFrame(this.raf);
+    this.cancelFrame();
     document.removeEventListener("visibilitychange", this.onVisibility);
+    this.reducedMotionQuery.removeEventListener?.("change", this.onReducedMotion);
     this.resizeObserver?.disconnect();
+    this.intersectionObserver?.disconnect();
     this.container.removeEventListener("pointermove", this.onPointerMove);
     this.container.removeEventListener("pointerenter", this.onPointerEnter);
     this.container.removeEventListener("pointerleave", this.onPointerLeave);
     this.container.removeEventListener("pointerdown", this.onPointerDown);
     this.container.removeEventListener("pointerup", this.onPointerUp);
     this.container.removeEventListener("pointercancel", this.onPointerUp);
-    this.renderer?.domElement.removeEventListener("webglcontextlost", this.onContextLost);
-    this.geometry?.dispose();
-    this.material?.dispose();
-    this.renderer?.dispose();
-    this.renderer?.domElement.remove();
+    this.releaseRenderResources();
     this.debugPanel?.remove();
     this.container.classList.remove("is-ready", "is-loading");
+    delete this.container.dataset.particleCount;
+    delete this.container.dataset.particleStep;
+    this.lastImageData = null;
+    this.dispatchActivity();
   }
 }
 
-export { vertexShader, fragmentShader };
+export { PRESETS as SCENE_PARTICLE_PRESETS, vertexShader, fragmentShader };
