@@ -1,8 +1,8 @@
-# chatgpt-web-voice
+# pang
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8)](https://go.dev/)
-[![GHCR](https://img.shields.io/badge/ghcr.io-space3044%2Fchatgpt--web--voice-2496ED)](https://github.com/Space3044/chatgpt-web-voice/pkgs/container/chatgpt-web-voice)
+[![GHCR](https://img.shields.io/badge/ghcr.io-wei500l%2Fpang-2496ED)](https://github.com/wei500L/pang/pkgs/container/pang)
 
 自托管的 **ChatGPT.com Web Voice 网关**。
 
@@ -89,14 +89,14 @@ go build -buildvcs=false -o bin/server ./cmd/server
 推荐使用 Docker Compose 部署。仓库根目录的 `docker-compose.yml` 已指向发布镜像：
 
 ```text
-ghcr.io/space3044/chatgpt-web-voice:main
+ghcr.io/wei500l/pang:main
 ```
 
 默认配置要点（`docker-compose.yml`）：
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| `image` | `ghcr.io/space3044/chatgpt-web-voice:main` | 发布镜像 |
+| `image` | `ghcr.io/wei500l/pang:main` | 发布镜像 |
 | `pull_policy` | `always` | 每次 up 尝试拉取最新镜像 |
 | `network_mode` | `host` | 共用宿主机网络，出站走宿主机透明代理（如 dae） |
 | `mem_limit` | `256m` | 容器内存上限（curl-impersonate 子进程略高于纯 Go） |
@@ -121,7 +121,7 @@ environment:
 # 生成密封密钥（只生成一次，后续保持不变）
 openssl rand -hex 32       # 后面填写至 VOICE_TOKEN_ENCRYPTION_KEY
 
-mkdir chatgpt-web-voice
+mkdir pang
 
 mkdir -p data
 
@@ -136,10 +136,10 @@ docker compose up -d
 
 ```bash
 docker compose ps
-docker compose logs -f chatgpt-web-voice
+docker compose logs -f
 docker compose pull
 docker compose up -d
-docker compose restart chatgpt-web-voice
+docker compose restart
 docker compose down
 ```
 
@@ -446,4 +446,5 @@ MIT。研究 / 自托管网关用途。
 与 OpenAI 无关联；请遵守 OpenAI 服务条款与当地法律法规。
 
 - 参考源码：https://github.com/dyhhhhhh/chatgpt-web-voice
-- 容器镜像：https://github.com/Space3044/chatgpt-web-voice/pkgs/container/chatgpt-web-voice
+- 项目仓库：https://github.com/wei500L/pang
+- 容器镜像：https://github.com/wei500L/pang/pkgs/container/pang

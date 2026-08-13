@@ -110,7 +110,7 @@ test("uniform normalization preserves defaults and clamps public ranges", () => 
     uFlowSpeed: 2,
     uDispersion: 0,
     uDepth: 3.4,
-    uPointSize: 1.05,
+    uPointSize: 1.28,
   });
 });
 
@@ -140,6 +140,15 @@ test("shader implements content-aware bounded depth, curl flow, highlight compre
   assert.match(particleModule, /#include <colorspace_fragment>/);
 });
 
+test("vertex shader declares shared frame dimensions only once", () => {
+  const vertexSource = particleModule.slice(
+    particleModule.indexOf("const vertexShader"),
+    particleModule.indexOf("const fragmentShader"),
+  );
+  assert.equal(vertexSource.match(/float halfW\s*=/g)?.length, 1);
+  assert.equal(vertexSource.match(/float halfH\s*=/g)?.length, 1);
+});
+
 test("core and halo share geometry while using distinct blend states", () => {
   assert.match(particleModule, /this\.corePoints = new THREE\.Points\(this\.geometry, this\.coreMaterial\)/);
   assert.match(particleModule, /this\.haloPoints = new THREE\.Points\(this\.geometry, this\.haloMaterial\)/);
@@ -157,6 +166,10 @@ test("runtime quality, visibility, context recovery, reduced motion, presets, an
   assert.match(particleModule, /if \(this\.qualityLevel === 1\) this\.dprScale = 0\.78/);
   assert.match(particleModule, /this\.haloPoints\.visible = this\.haloEnabled/);
   assert.match(particleModule, /this\.detailScale = 0/);
+  assert.match(particleModule, /this\.immersive\s*\?\s*Math\.max\(verticalDistance, horizontalDistance\)/);
+  assert.match(particleModule, /const framingScale = this\.immersive \? 1\.28 : 0\.9/);
+  assert.match(particleModule, /this\.renderer\.toneMappingExposure = 1\.18/);
+  assert.match(particleModule, /this\.uniforms\.uHaloAlpha\.value = this\.haloEnabled \? 0\.18 : 0\.1/);
   assert.match(particleModule, /buildParticleAttributes\(this\.lastImageData, \{ step: nextStep/);
   assert.match(particleModule, /webglcontextrestored/);
   assert.match(particleModule, /async restoreContext\(\)/);
@@ -189,7 +202,8 @@ test("scene UI floats one particle field behind the conversation with fullscreen
   assert.match(voiceHTML, /id="sceneParticleField"/);
   assert.match(voiceHTML, /id="sceneParticleStage"/);
   assert.match(voiceHTML, /id="sceneParticleDialog"/);
-  assert.match(voiceHTML, /import\('\/static\/scene-particle-visual\/index\.js'\)/);
+  assert.match(voiceHTML, /import\('\/static\/scene-particle-visual\/index\.js(?:\?[^']*)?'\)/);
+  assert.match(particleModule, /from "\.\/core\.js\?v=[^"]+"/);
   assert.match(voiceHTML, /window\.PangSceneParticleVisual/);
   assert.match(voiceHTML, /sceneParticleDialogMount\.appendChild\(sceneParticleStage\)/);
   assert.match(voiceHTML, /sceneParticleField\.insertBefore\(sceneParticleStage/);

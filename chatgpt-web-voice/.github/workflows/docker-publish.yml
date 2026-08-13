@@ -7,7 +7,7 @@
 #   - workflow_dispatch    → rebuild current ref
 #
 # After the first successful push, set the package visibility to Public:
-#   GitHub → repo → Packages → chatgpt-web-voice → Package settings → Change visibility
+#   GitHub → repo → Packages → pang → Package settings → Change visibility
 
 name: Docker Publish
 
@@ -88,7 +88,7 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
           labels: |
-            org.opencontainers.image.title=chatgpt-web-voice
+            org.opencontainers.image.title=pang
             org.opencontainers.image.description=Self-hosted ChatGPT.com Web Voice gateway
             org.opencontainers.image.licenses=MIT
 

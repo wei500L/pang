@@ -1,6 +1,6 @@
 services:
   chatgpt-web-voice:
-    image: ghcr.io/space3044/chatgpt-web-voice:main
+    image: ghcr.io/wei500l/pang:main
     pull_policy: always
     container_name: chatgpt-web-voice
     network_mode: host

@@ -5,12 +5,12 @@ import {
   buildParticleAttributes,
   chooseSceneParticleStep,
   normalizeSceneParticleUniforms,
-} from "./core.js";
+} from "./core.js?v=20260813-8";
 
 const PRESETS = Object.freeze({
   still: SCENE_PARTICLE_DEFAULTS,
-  ethereal: Object.freeze({ uFlowSpeed: 0.22, uDispersion: 0.1, uDepth: 1.45, uPointSize: 1.12 }),
-  dissolve: Object.freeze({ uFlowSpeed: 0.58, uDispersion: 1.15, uDepth: 1.85, uPointSize: 1.18 }),
+  ethereal: Object.freeze({ uFlowSpeed: 0.22, uDispersion: 0.1, uDepth: 1.45, uPointSize: 1.36 }),
+  dissolve: Object.freeze({ uFlowSpeed: 0.58, uDispersion: 1.15, uDepth: 1.85, uPointSize: 1.42 }),
 });
 
 const vertexShader = /* glsl */ `
@@ -178,8 +178,6 @@ const vertexShader = /* glsl */ `
     displaced.xy += tangent * pulseBand * pulseDecay * 0.035;
     displaced.z += pulseBand * pulseDecay * 0.12;
 
-    float halfW = max(0.001, uWorldWidth * 0.5);
-    float halfH = max(0.001, uWorldHeight * 0.5);
     float nx = abs(position.x) / halfW;
     float ny = abs(position.y) / halfH;
     float frame = max(nx, ny);
@@ -439,7 +437,7 @@ export class SceneParticleVisual {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.18;
     this.renderer.domElement.setAttribute("aria-hidden", "true");
     this.renderer.domElement.addEventListener("webglcontextlost", this.onContextLost, false);
     this.renderer.domElement.addEventListener("webglcontextrestored", this.onContextRestored, false);
@@ -687,8 +685,11 @@ export class SceneParticleVisual {
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
     const verticalDistance = (this.worldHeight * 0.5) / Math.tan(halfFov);
     const horizontalDistance = (this.worldWidth * 0.5) / (Math.tan(halfFov) * this.camera.aspect);
-    const coverMargin = this.immersive ? 0.94 : 0.9;
-    this.camera.position.z = Math.max(3.8, Math.min(verticalDistance, horizontalDistance) * coverMargin + 0.55);
+    const framingDistance = this.immersive
+      ? Math.max(verticalDistance, horizontalDistance)
+      : Math.min(verticalDistance, horizontalDistance);
+    const framingScale = this.immersive ? 1.28 : 0.9;
+    this.camera.position.z = Math.max(3.8, framingDistance * framingScale + 0.55);
     this.camera.near = Math.max(0.1, this.camera.position.z - 4.0);
     this.camera.far = this.camera.position.z + 5.0;
     this.camera.updateProjectionMatrix();
@@ -816,8 +817,8 @@ export class SceneParticleVisual {
   applyQualitySettings() {
     if (!this.uniforms) return;
     this.uniforms.uDetailScale.value = this.detailScale;
-    this.uniforms.uHaloScale.value = this.haloEnabled ? 0.82 : 0.62;
-    this.uniforms.uHaloAlpha.value = this.haloEnabled ? 0.14 : 0.08;
+    this.uniforms.uHaloScale.value = this.haloEnabled ? 0.94 : 0.68;
+    this.uniforms.uHaloAlpha.value = this.haloEnabled ? 0.18 : 0.1;
     if (this.haloPoints) this.haloPoints.visible = this.haloEnabled;
     this.updateDebugPanel();
   }

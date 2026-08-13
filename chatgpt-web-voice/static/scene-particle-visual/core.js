@@ -2,7 +2,7 @@ export const SCENE_PARTICLE_DEFAULTS = Object.freeze({
   uFlowSpeed: 0.12,
   uDispersion: 0.05,
   uDepth: 1.28,
-  uPointSize: 1.05,
+  uPointSize: 1.28,
 });
 
 export const SCENE_PARTICLE_RANGES = Object.freeze({
