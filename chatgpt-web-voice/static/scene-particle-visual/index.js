@@ -118,16 +118,21 @@ const vertexShader = /* glsl */ `
     vec3 linearColor = srgbToLinear(color);
     float chroma = max(linearColor.r, max(linearColor.g, linearColor.b)) - min(linearColor.r, min(linearColor.g, linearColor.b));
     float highlightCompression = mix(1.0, 0.72, smoothstep(0.58, 0.96, aLuminance) * (1.0 - smoothstep(0.035, 0.2, chroma)));
-    vColor = linearColor * highlightCompression;
+    
+    float halfW = max(0.001, uWorldWidth * 0.5);
+    float halfH = max(0.001, uWorldHeight * 0.5);
+    float centerDist = length(position.xy) / max(halfW, halfH);
+    float centerBloom = exp(-centerDist * centerDist * 2.5);
+    
+    vColor = linearColor * highlightCompression * (1.0 + centerBloom * 0.6);
     vVisualWeight = aVisualWeight;
     vLuminance = aLuminance;
 
     vec3 displaced = position;
-    float midtoneVolume = exp(-pow((aLuminance - 0.34) * 2.45, 2.0));
-    float darkRecess = 1.0 - smoothstep(0.0, 0.22, aLuminance);
+    float darkRecess = 1.0 - smoothstep(0.0, 0.25, aLuminance);
     float brightLimit = smoothstep(0.5, 0.9, aLuminance);
-    float depthShape = midtoneVolume * (0.32 + aVisualWeight * 0.42) - darkRecess * 0.28 + brightLimit * 0.08;
-    displaced.z += clamp(depthShape * uDepth, -0.72, 0.82);
+    float depthShape = (aLuminance - 0.4) * 1.5 + aVisualWeight * 0.6 - darkRecess * 0.5 + brightLimit * 0.4;
+    displaced.z += clamp(depthShape * uDepth, -1.8, 1.8);
 
     float driftTime = uTime * uFlowSpeed * uMotionScale;
     vec3 flowPosition = position * 0.31 + vec3(0.0, driftTime * 0.16, driftTime * 0.08) + aRandom * 0.045;
@@ -179,12 +184,12 @@ const vertexShader = /* glsl */ `
     float ny = abs(position.y) / halfH;
     float frame = max(nx, ny);
     float corner = nx * ny;
-    float grain = snoise(vec3(position.xy * 1.7, aRandom.z * 4.2));
-    float edgeMix = frame * 0.78 + corner * 0.34 + grain * 0.14;
-    float edgeKeep = 1.0 - smoothstep(0.52, 1.04, edgeMix);
+    float grain = snoise(vec3(position.xy * 2.5, aRandom.z * 2.0));
+    float edgeMix = frame * 0.8 + corner * 0.2 + grain * 0.25;
+    float edgeKeep = 1.0 - smoothstep(0.6, 1.1, edgeMix);
     displaced += flow * (1.0 - edgeKeep) * 0.18 * uMotionScale;
 
-    displaced.z = clamp(displaced.z, -1.05, 1.18);
+    displaced.z = clamp(displaced.z, -1.8, 1.8);
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     float perspectiveScale = clamp(7.0 / max(2.0, -mvPosition.z), 0.72, 1.28);
@@ -324,6 +329,10 @@ export class SceneParticleVisual {
     this.pressVelocity = 0;
     this.parallaxTarget = new THREE.Vector2();
     this.parallax = new THREE.Vector2();
+    this.dragRotation = new THREE.Vector2();
+    this.targetDragRotation = new THREE.Vector2();
+    this.isDragging = false;
+    this.previousPointer = { x: 0, y: 0 };
     this.loadVersion = 0;
     this.loadController = null;
     this.currentURL = "";
@@ -379,14 +388,18 @@ export class SceneParticleVisual {
       this.pointerTarget = 0;
       this.pressTarget = 0;
       this.parallaxTarget.set(0, 0);
+      this.isDragging = false;
     };
     this.onPointerDown = (event) => {
       if (event.pointerType === "touch" && !this.immersive) return;
+      this.isDragging = true;
+      this.previousPointer = { x: event.clientX, y: event.clientY };
       this.handlePointerMove(event);
       this.pressTarget = 1;
       this.container.setPointerCapture?.(event.pointerId);
     };
     this.onPointerUp = (event) => {
+      this.isDragging = false;
       this.pressTarget = 0;
       if (this.container.hasPointerCapture?.(event.pointerId)) this.container.releasePointerCapture(event.pointerId);
     };
@@ -511,7 +524,17 @@ export class SceneParticleVisual {
     this.raycaster.setFromCamera(ndc, this.camera);
     if (this.raycaster.ray.intersectPlane(this.pointerPlane, this.pointerIntersection)) this.uniforms.uPointer.value.copy(this.pointerIntersection);
     this.pointerTarget = 1;
-    this.parallaxTarget.set(ndc.y * 0.018, ndc.x * 0.032);
+    
+    if (this.isDragging) {
+      const deltaX = event.clientX - this.previousPointer.x;
+      const deltaY = event.clientY - this.previousPointer.y;
+      this.targetDragRotation.y += deltaX * 0.005;
+      this.targetDragRotation.x += deltaY * 0.005;
+      this.targetDragRotation.x = THREE.MathUtils.clamp(this.targetDragRotation.x, -Math.PI / 3, Math.PI / 3);
+      this.previousPointer = { x: event.clientX, y: event.clientY };
+    } else {
+      this.parallaxTarget.set(ndc.y * 0.018, ndc.x * 0.032);
+    }
   }
 
   async setImage(url, options = {}) {
@@ -713,6 +736,7 @@ export class SceneParticleVisual {
     this.pressValue += this.pressVelocity * dt;
     this.pressValue = THREE.MathUtils.clamp(this.pressValue, -0.08, 1.08);
     this.parallax.lerp(this.parallaxTarget, 1 - Math.exp(-dt * 4));
+    this.dragRotation.lerp(this.targetDragRotation, 1 - Math.exp(-dt * 8));
     this.uniforms.uTime.value = timestamp / 1000;
     this.uniforms.uPointerStrength.value = this.reducedMotion ? 0 : this.pointerValue;
     this.uniforms.uPressStrength.value = this.reducedMotion ? 0 : Math.max(0, this.pressValue);
@@ -722,8 +746,8 @@ export class SceneParticleVisual {
       const progress = Math.min(1, elapsed / 2050);
       this.uniforms.uReveal.value = 1 - Math.pow(1 - progress, 3);
       const drift = this.immersive ? 1 : 0.42;
-      this.group.rotation.x = this.parallax.x + Math.sin(timestamp * 0.00009) * 0.006 * drift;
-      this.group.rotation.y = this.parallax.y + Math.sin(timestamp * 0.00011) * 0.009 * drift;
+      this.group.rotation.x = this.parallax.x + this.dragRotation.x + Math.sin(timestamp * 0.00009) * 0.006 * drift;
+      this.group.rotation.y = this.parallax.y + this.dragRotation.y + Math.sin(timestamp * 0.00011) * 0.009 * drift;
     }
     this.updateOutgoingLayers(timestamp);
     this.renderer.render(this.scene, this.camera);

@@ -1792,7 +1792,7 @@
       body.app-shell .composer-dock { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
     }
   </style>
-  <link rel="stylesheet" href="/static/voice-room.css" />
+  <link rel="stylesheet" href="/static/voice-room.css?v=scene-reader-20260813" />
 </head>
 <body class="app-shell" data-voice-state="idle">
   <div class="room-atmosphere" aria-hidden="true">
@@ -1862,7 +1862,6 @@
     <main class="conversation-shell">
       <div id="sceneParticleField" class="scene-particle-field" hidden>
         <div id="sceneParticleStage" class="scene-particle-stage" aria-hidden="true"></div>
-        <img id="sceneImage" class="scene-image" alt="" />
         <div class="scene-particle-veil" aria-hidden="true"></div>
       </div>
       <div id="agentVisualLayer" class="agent-visual-layer" aria-hidden="true"></div>
@@ -1937,8 +1936,11 @@
                   <h2 id="sceneResultTitle">另一种可能 · 生活的一帧</h2>
                   <p id="sceneDisclaimer" class="scene-disclaimer"></p>
                 </div>
+                <figure class="scene-figure">
+                  <img id="sceneImage" class="scene-image" alt="" />
+                  <figcaption id="sceneClosing" class="scene-closing" hidden></figcaption>
+                </figure>
                 <p id="sceneCaption" class="scene-caption"></p>
-                <p id="sceneClosing" class="scene-closing" hidden></p>
                 <div id="sceneEssayBlock" class="scene-essay-block" hidden>
                   <div id="sceneEssay" class="scene-essay"></div>
                 </div>
@@ -1951,9 +1953,18 @@
                     <span class="material-symbols-rounded" aria-hidden="true">fullscreen</span>
                     <span data-i18n="sceneImmersive">沉浸查看</span>
                   </button>
-                  <button type="button" id="btnSceneDownload" class="scene-ghost-button" data-i18n="sceneDownload">下载图片</button>
-                  <button type="button" id="btnSceneRegenerate" class="scene-ghost-button" data-i18n="sceneRegenerate">按这个假如再生成一次</button>
-                  <button type="button" id="btnSceneReselect" class="scene-ghost-button" data-i18n="sceneReselect">重新选择假如</button>
+                  <button type="button" id="btnSceneDownload" class="scene-ghost-button">
+                    <span class="material-symbols-rounded" aria-hidden="true">download</span>
+                    <span data-i18n="sceneDownload">下载图片</span>
+                  </button>
+                  <button type="button" id="btnSceneRegenerate" class="scene-ghost-button">
+                    <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+                    <span data-i18n="sceneRegenerate">按这个假如再生成一次</span>
+                  </button>
+                  <button type="button" id="btnSceneReselect" class="scene-ghost-button">
+                    <span class="material-symbols-rounded" aria-hidden="true">swap_horiz</span>
+                    <span data-i18n="sceneReselect">重新选择假如</span>
+                  </button>
                 </div>
               </div>
               <div id="sceneHistory" class="scene-history" hidden>
@@ -4111,7 +4122,7 @@
 
   function sceneLoadParticleModule() {
     if (!sceneParticleModulePromise) {
-      sceneParticleModulePromise = import('/static/scene-particle-visual/index.js').catch(function (error) {
+      sceneParticleModulePromise = import('/static/scene-particle-visual/index.js?v=20260813-4').catch(function (error) {
         sceneParticleModulePromise = null;
         throw error;
       });

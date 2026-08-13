@@ -131,9 +131,9 @@ test("shader implements content-aware bounded depth, curl flow, highlight compre
   assert.match(particleModule, /float vulnerability = clamp\(\(1\.0 - aVisualWeight\)/);
   assert.match(particleModule, /float dispersionCurve = uDispersion \* uDispersion/);
   assert.match(particleModule, /highlightCompression = mix\(1\.0, 0\.72/);
-  assert.match(particleModule, /float edgeKeep = 1\.0 - smoothstep\(0\.52, 1\.04, edgeMix\)/);
+  assert.match(particleModule, /float edgeKeep = 1\.0 - smoothstep\(0\.6, 1\.1, edgeMix\)/);
   assert.match(particleModule, /uniform float uWorldWidth/);
-  assert.match(particleModule, /displaced\.z = clamp\(displaced\.z, -1\.05, 1\.18\)/);
+  assert.match(particleModule, /displaced\.z = clamp\(displaced\.z, -1\.8, 1\.8\)/);
   assert.match(particleModule, /gl_PointSize = clamp\(uPointSize \* uPixelRatio \* perspectiveScale/);
   assert.match(particleModule, /float radius = length\(centered\)/);
   assert.match(particleModule, /if \(radius > 0\.5\) discard/);
@@ -197,7 +197,9 @@ test("scene UI floats one particle field behind the conversation with fullscreen
   assert.match(voiceHTML, /classList\.add\('has-scene-field'/);
   assert.match(voiceHTML, /sceneSetAgentVisualActive\(true\)/);
   assert.match(voiceHTML, /sceneSetAgentVisualActive\(false\)/);
-  assert.match(voiceRoomCSS, /\.scene-particle-field\.is-particle-ready \.scene-image \{[\s\S]{0,80}opacity: 0/);
+  assert.match(voiceRoomCSS, /\.scene-figure/);
+  assert.match(voiceRoomCSS, /\.scene-image \{[\s\S]{0,120}aspect-ratio: 3 \/ 2/);
+  assert.match(voiceRoomCSS, /\.scene-image \{[\s\S]{0,160}opacity: 1/);
   assert.match(voiceRoomCSS, /\.scene-particle-field\.is-particle-ready \.scene-particle-stage \{[\s\S]{0,80}opacity: 1/);
   assert.match(voiceRoomCSS, /object-fit: cover/);
   assert.match(voiceRoomCSS, /\.scene-particle-stage\.is-immersive/);

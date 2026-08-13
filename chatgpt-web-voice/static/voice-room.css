@@ -1144,20 +1144,37 @@ body.app-shell.has-scene-field[data-scene-state="completed"] .scene-studio-inner
   box-shadow: 0 18px 48px rgba(93, 72, 48, 0.1), inset 0 1px rgba(255, 255, 255, 0.72);
 }
 
+body.app-shell .scene-figure {
+  position: relative;
+  margin: 2px 0 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(233, 226, 214, 0.72);
+  box-shadow: 0 10px 28px rgba(96, 74, 52, 0.12);
+}
+
 body.app-shell .scene-image {
-  position: absolute;
-  inset: -10%;
-  z-index: 1;
   display: block;
-  width: 120%;
-  height: 120%;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  height: auto;
   object-fit: cover;
   object-position: center;
-  opacity: 0.88;
-  filter: saturate(0.92) contrast(1.04);
-  mask-image: radial-gradient(ellipse at center, #000 42%, transparent 78%);
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 42%, transparent 78%);
-  transition: opacity 900ms ease;
+  opacity: 1;
+  filter: none;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+body.app-shell .scene-closing {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(120, 100, 76, 0.12);
+  color: #4b4945;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.8;
 }
 
 body.app-shell .scene-particle-stage {
@@ -1175,10 +1192,6 @@ body.app-shell .scene-particle-stage canvas {
   height: 100%;
 }
 
-body.app-shell .scene-particle-field.is-particle-ready .scene-image {
-  opacity: 0;
-}
-
 body.app-shell .scene-particle-field.is-particle-ready .scene-particle-stage {
   opacity: 1;
 }
@@ -1191,10 +1204,6 @@ body.app-shell .scene-particle-veil {
   background:
     radial-gradient(ellipse at 50% 46%, transparent 38%, rgba(248, 244, 236, 0.05) 66%, rgba(248, 244, 236, 0.4) 100%),
     linear-gradient(180deg, rgba(248, 244, 236, 0.1), transparent 18%, transparent 66%, rgba(248, 244, 236, 0.52));
-}
-
-body.app-shell .scene-particle-field.is-particle-unavailable .scene-image {
-  opacity: 0.92;
 }
 
 body.app-shell .scene-result-actions .scene-ghost-button {
@@ -1381,33 +1390,28 @@ body.app-shell .scene-particle-field.is-immersive-open {
 }
 
 body.app-shell .scene-caption {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   color: #4b4945;
   font-family: "Noto Serif SC", serif;
   font-size: 14px;
   line-height: 1.8;
 }
 
-body.app-shell .scene-closing {
-  margin: 12px 0 0;
-  color: #4b4945;
-  font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.8;
+body.app-shell .scene-completed.has-essay .scene-caption {
+  display: none;
 }
 
 body.app-shell .scene-essay-block {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 body.app-shell .scene-essay {
-  max-height: min(26vh, 220px);
+  max-height: min(30vh, 240px);
   overflow-y: auto;
   padding-right: 2px;
   color: #6a6660;
   font-size: 13px;
-  line-height: 1.8;
+  line-height: 1.85;
   scrollbar-width: thin;
 }
 
@@ -1448,6 +1452,250 @@ body.app-shell .scene-result-actions {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 16px;
+}
+
+/* Completed scenes are a reading mode, not another floating dialog.
+   The generated picture leads; the essay and controls form a quieter rail. */
+body.app-shell[data-scene-state="completed"] .welcome-state {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.app-shell.has-scene-field[data-scene-state="completed"] .scene-particle-field {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.app-shell.has-scene-field[data-scene-state="completed"] .room-background {
+  opacity: 1;
+}
+
+body.app-shell.has-scene-field[data-scene-state="completed"] .room-sunwash {
+  opacity: 0.72;
+}
+
+body.app-shell[data-scene-state="completed"] .scene-studio {
+  top: 50%;
+  bottom: auto;
+  width: min(1160px, calc(100% - 72px));
+  max-height: calc(100% - 44px);
+  transform: translate(-50%, -50%);
+}
+
+body.app-shell[data-scene-state="completed"] .scene-studio-inner,
+body.app-shell.has-scene-field[data-scene-state="completed"] .scene-studio-inner {
+  max-height: calc(100vh - 164px - 142px);
+  padding: 18px;
+  border-color: rgba(112, 90, 68, 0.14);
+  border-radius: 24px;
+  background: rgba(255, 253, 249, 0.96);
+  box-shadow: 0 28px 80px rgba(83, 63, 43, 0.16), inset 0 1px rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px) saturate(1.02);
+  -webkit-backdrop-filter: blur(18px) saturate(1.02);
+}
+
+body.app-shell .scene-completed {
+  min-height: 0;
+}
+
+body.app-shell .scene-completed.has-essay {
+  display: grid;
+  grid-template-columns: minmax(0, 1.52fr) minmax(310px, 0.88fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  column-gap: 24px;
+  align-items: start;
+}
+
+body.app-shell .scene-completed.has-essay .scene-result-head {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  margin: 2px 0 16px;
+}
+
+body.app-shell .scene-completed.has-essay .scene-result-head h2 {
+  min-width: 0;
+  color: #403e3a;
+  font-size: clamp(21px, 1.7vw, 27px);
+  font-weight: 500;
+  line-height: 1.48;
+  letter-spacing: 0.025em;
+}
+
+body.app-shell .scene-completed.has-essay .scene-disclaimer {
+  margin-top: 7px;
+  color: #a26b50;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+body.app-shell .scene-completed.has-essay .scene-figure {
+  grid-column: 1;
+  grid-row: 1 / 5;
+  align-self: center;
+  margin: 0;
+  border: 1px solid rgba(111, 88, 65, 0.1);
+  border-radius: 18px;
+  background: #ede6da;
+  box-shadow: 0 16px 42px rgba(88, 65, 43, 0.14);
+}
+
+body.app-shell .scene-completed.has-essay .scene-image {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+
+body.app-shell .scene-completed.has-essay .scene-closing {
+  padding: 13px 16px 14px;
+  color: #55514b;
+  background: rgba(255, 252, 246, 0.98);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+body.app-shell .scene-completed.has-essay .scene-essay-block {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+body.app-shell .scene-completed.has-essay .scene-essay {
+  max-height: min(29vh, 250px);
+  padding: 0 8px 0 0;
+  color: #66615a;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+body.app-shell .scene-completed.has-essay .scene-essay p {
+  margin-bottom: 0.9em;
+}
+
+body.app-shell .scene-completed.has-essay .scene-micro-action {
+  grid-column: 2;
+  grid-row: 3;
+  margin: 16px 0 0;
+  padding: 11px 13px 11px 15px;
+  border: 0;
+  border-left: 2px solid rgba(79, 139, 112, 0.55);
+  border-radius: 0 10px 10px 0;
+  background: rgba(239, 246, 241, 0.72);
+}
+
+body.app-shell .scene-completed.has-essay .scene-micro-action-label {
+  margin-bottom: 4px;
+  color: #5d806d;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+body.app-shell .scene-completed.has-essay .scene-micro-action p {
+  color: #514e49;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+body.app-shell .scene-completed.has-essay .scene-result-actions {
+  grid-column: 2;
+  grid-row: 4;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+body.app-shell .scene-completed.has-essay .scene-result-actions .scene-ghost-button {
+  position: static !important;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 10px;
+  transform: none;
+}
+
+body.app-shell .scene-completed.has-essay #btnSceneImmersive {
+  color: #fffdf8;
+  border-color: #675d52;
+  background: #675d52;
+}
+
+body.app-shell .scene-completed.has-essay #btnSceneImmersive:hover {
+  color: #fff;
+  border-color: #51483f;
+  background: #51483f;
+}
+
+/* Once a call has become a scene, the voice dock stays available without
+   competing with the generated result. */
+body.app-shell[data-scene-state="completed"] .composer-dock {
+  bottom: 18px;
+  width: min(760px, calc(100% - 108px));
+  padding: 8px 16px 10px;
+  border-radius: 28px;
+  background: rgba(255, 252, 247, 0.86);
+  box-shadow: 0 18px 52px rgba(90, 68, 46, 0.13), inset 0 1px rgba(255, 255, 255, 0.88);
+}
+
+body.app-shell[data-scene-state="completed"] .call-strip {
+  min-height: 64px;
+  grid-template-columns: 1fr;
+  padding: 13px 0 0;
+}
+
+body.app-shell[data-scene-state="completed"] .voice-wave {
+  display: none;
+}
+
+body.app-shell[data-scene-state="completed"] .controls {
+  gap: 12px;
+}
+
+body.app-shell[data-scene-state="completed"] .btn-side {
+  width: 38px;
+  height: 38px;
+}
+
+body.app-shell[data-scene-state="completed"] .btn-side .material-symbols-rounded {
+  font-size: 19px;
+}
+
+body.app-shell[data-scene-state="completed"] .btn-main {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+}
+
+body.app-shell[data-scene-state="completed"] .btn-main::before {
+  font-size: 23px;
+}
+
+body.app-shell[data-scene-state="completed"] .btn-main::after {
+  top: calc(100% + 5px);
+  font-size: 9px;
+}
+
+body.app-shell[data-scene-state="completed"] .composer-row {
+  padding-top: 3px;
+}
+
+body.app-shell[data-scene-state="completed"] .composer textarea {
+  height: 34px;
+  min-height: 34px;
+  padding-block: 8px 6px;
+}
+
+body.app-shell[data-scene-state="completed"] .composer .btn-send {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  flex-basis: 36px;
 }
 
 body.app-shell .scene-history {
@@ -1510,6 +1758,22 @@ body.app-shell .scene-history-caption {
   }
   body.app-shell .scene-candidates {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  body.app-shell .scene-completed.has-essay {
+    display: block;
+  }
+  body.app-shell .scene-completed.has-essay .scene-result-head,
+  body.app-shell .scene-completed.has-essay .scene-figure,
+  body.app-shell .scene-completed.has-essay .scene-essay-block,
+  body.app-shell .scene-completed.has-essay .scene-micro-action,
+  body.app-shell .scene-completed.has-essay .scene-result-actions {
+    margin-top: 14px;
+  }
+  body.app-shell .scene-completed.has-essay .scene-result-head { margin-top: 0; }
+  body.app-shell .scene-completed.has-essay .scene-essay { max-height: none; }
+  body.app-shell[data-scene-state="completed"] .composer-dock {
+    left: 50%;
+    width: calc(100% - 28px);
   }
 }
 
