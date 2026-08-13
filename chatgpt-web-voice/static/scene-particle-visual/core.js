@@ -1,8 +1,8 @@
 export const SCENE_PARTICLE_DEFAULTS = Object.freeze({
-  uFlowSpeed: 0.5,
-  uDispersion: 0.2,
-  uDepth: 2.0,
-  uPointSize: 2.0,
+  uFlowSpeed: 0.12,
+  uDispersion: 0.05,
+  uDepth: 1.28,
+  uPointSize: 1.05,
 });
 
 export const SCENE_PARTICLE_RANGES = Object.freeze({
@@ -170,7 +170,7 @@ export function chooseSceneParticleStep(environment = {}) {
   const reducedMotion = Boolean(environment.reducedMotion);
   const memory = Number(environment.deviceMemory || 4);
   const cores = Number(environment.hardwareConcurrency || 4);
-  if (mobile || reducedMotion || memory <= 2 || cores <= 4) return 7;
-  if (memory >= 8 && cores >= 8) return 4;
-  return 5;
+  if (mobile || reducedMotion || memory <= 2 || cores <= 4) return 4;
+  if (memory >= 8 && cores >= 8) return 2;
+  return 3;
 }

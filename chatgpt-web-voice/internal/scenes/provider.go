@@ -32,6 +32,18 @@ const (
 	maxAspectRelativeError = 0.005
 )
 
+// acceptedAspectRatios lists the source canvases the product accepts and
+// normalizes to the exact 3:2 target:
+//
+//   - 3:2 (1536x1024): the exact target canvas, kept byte-for-byte.
+//   - 5:4 (e.g. 1402x1122): a common relay output for gpt-image-2 channels
+//     that ignore the requested size. The relay routes requests to multiple
+//     upstream channels and returns either ratio; 5:4 is the same visual
+//     orientation and is Lanczos-normalized to the exact target.
+//
+// Any other ratio is rejected: no stretch, crop, or letterbox.
+var acceptedAspectRatios = []float64{3.0 / 2.0, 5.0 / 4.0}
+
 // Pixel-safety caps for decoded images. Every generated image, including ones
 // whose header claims the exact target size, must survive a full decode within
 // these bounds; otherwise a decompression bomb could exhaust memory even when
@@ -167,7 +179,8 @@ func decodeBase64Payload(value string) ([]byte, error) {
 //  4. format consistency between magic bytes and DecodeConfig,
 //  5. width/height > 0,
 //  6. max dimension and pixel-count caps (int64 math, overflow-safe),
-//  7. 3:2 aspect-ratio check within 0.5%,
+//  7. aspect-ratio check within 0.5% against the accepted canvases
+//     (3:2 and 5:4; both normalize to the exact 3:2 target),
 //  8. complete image.Decode,
 //  9. decoded bounds must match DecodeConfig,
 //  10. exact 1536x1024 keeps the original bytes only after a successful full
@@ -258,15 +271,20 @@ func formatMIME(format string) string {
 	}
 }
 
-// aspectRatioMatches compares width/height to 1536/1024 with a relative error
-// tolerance of 0.5%.
+// aspectRatioMatches compares width/height against every accepted target
+// aspect ratio (3:2 and 5:4) with a relative error tolerance of 0.5%.
 func aspectRatioMatches(width, height int) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
 	actualRatio := float64(width) / float64(height)
-	relativeError := math.Abs(actualRatio-targetAspectRatio) / targetAspectRatio
-	return relativeError <= maxAspectRelativeError
+	for _, target := range acceptedAspectRatios {
+		relativeError := math.Abs(actualRatio-target) / target
+		if relativeError <= maxAspectRelativeError {
+			return true
+		}
+	}
+	return false
 }
 
 // sniffImage detects jpeg/png/webp by magic bytes and reads the header

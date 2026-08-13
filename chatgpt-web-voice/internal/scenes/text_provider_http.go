@@ -220,10 +220,10 @@ func buildCandidateUserPrompt(input CandidateInput) string {
 // and the selected candidate only.
 func buildBriefUserPrompt(input BriefInput) string {
 	var builder strings.Builder
-	builder.WriteString("请根据以下已确认的内容编排画面。\n\n")
+	builder.WriteString("请根据以下已确认的内容编排短文与画面。\n\n")
 	builder.WriteString("处境摘要：\n")
 	builder.WriteString(input.ApprovedSummary)
-	builder.WriteString("\n\n已选择的生活时刻：\n")
+	builder.WriteString("\n\n已选择的假如身份：\n")
 	builder.WriteString(fmt.Sprintf("标题：%s\n", input.Candidate.Title))
 	builder.WriteString(fmt.Sprintf("时刻：%s\n", input.Candidate.Moment))
 	builder.WriteString(fmt.Sprintf("看得见的改变：%s\n", input.Candidate.VisibleChange))

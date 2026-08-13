@@ -110,15 +110,15 @@ test("uniform normalization preserves defaults and clamps public ranges", () => 
     uFlowSpeed: 2,
     uDispersion: 0,
     uDepth: 3.4,
-    uPointSize: 2,
+    uPointSize: 1.05,
   });
 });
 
 test("quality selection follows desktop, ordinary, and constrained budgets", () => {
-  assert.equal(chooseSceneParticleStep({ deviceMemory: 8, hardwareConcurrency: 8 }), 4);
-  assert.equal(chooseSceneParticleStep({ deviceMemory: 4, hardwareConcurrency: 6 }), 5);
-  assert.equal(chooseSceneParticleStep({ mobile: true, deviceMemory: 8, hardwareConcurrency: 8 }), 7);
-  assert.equal(chooseSceneParticleStep({ reducedMotion: true, deviceMemory: 8, hardwareConcurrency: 8 }), 7);
+  assert.equal(chooseSceneParticleStep({ deviceMemory: 8, hardwareConcurrency: 8 }), 2);
+  assert.equal(chooseSceneParticleStep({ deviceMemory: 4, hardwareConcurrency: 6 }), 3);
+  assert.equal(chooseSceneParticleStep({ mobile: true, deviceMemory: 8, hardwareConcurrency: 8 }), 4);
+  assert.equal(chooseSceneParticleStep({ reducedMotion: true, deviceMemory: 8, hardwareConcurrency: 8 }), 4);
 });
 
 test("shader implements content-aware bounded depth, curl flow, highlight compression, and circular points", () => {
@@ -131,6 +131,8 @@ test("shader implements content-aware bounded depth, curl flow, highlight compre
   assert.match(particleModule, /float vulnerability = clamp\(\(1\.0 - aVisualWeight\)/);
   assert.match(particleModule, /float dispersionCurve = uDispersion \* uDispersion/);
   assert.match(particleModule, /highlightCompression = mix\(1\.0, 0\.72/);
+  assert.match(particleModule, /float edgeKeep = 1\.0 - smoothstep\(0\.52, 1\.04, edgeMix\)/);
+  assert.match(particleModule, /uniform float uWorldWidth/);
   assert.match(particleModule, /displaced\.z = clamp\(displaced\.z, -1\.05, 1\.18\)/);
   assert.match(particleModule, /gl_PointSize = clamp\(uPointSize \* uPixelRatio \* perspectiveScale/);
   assert.match(particleModule, /float radius = length\(centered\)/);
@@ -162,9 +164,10 @@ test("runtime quality, visibility, context recovery, reduced motion, presets, an
   assert.match(particleModule, /uMotionScale\.value = this\.reducedMotion \? 0 : 1/);
   assert.match(particleModule, /if \(!this\.reducedMotion \|\| this\.outgoingLayers\?\.length\) this\.schedule\(\)/);
   assert.match(particleModule, /setPreset\(name\)/);
-  assert.match(particleModule, /still: Object\.freeze/);
-  assert.match(particleModule, /ethereal: SCENE_PARTICLE_DEFAULTS/);
+  assert.match(particleModule, /still: SCENE_PARTICLE_DEFAULTS/);
+  assert.match(particleModule, /ethereal: Object\.freeze/);
   assert.match(particleModule, /dissolve: Object\.freeze/);
+  assert.match(particleModule, /Math\.min\(verticalDistance, horizontalDistance\)/);
   assert.match(particleModule, /FPS · DPR/);
 });
 
@@ -179,22 +182,24 @@ test("async image versions and lifecycle cleanup prevent stale installs and accu
   assert.match(voiceHTML, /removeEventListener\('scene-particle-ready', sceneHandleParticleReady\)/);
   assert.match(voiceHTML, /addEventListener\('scene-particle-ready', sceneHandleParticleReady\)/);
   assert.match(voiceHTML, /requestVersion !== sceneParticleRequestVersion/);
-  assert.match(voiceHTML, /typeof sceneParticleVisual\.canRender === 'function'/);
+  assert.match(voiceHTML, /immersiveOpen/);
 });
 
-test("scene UI lazy-loads one particle stage with fullscreen and static-image fallback", () => {
+test("scene UI floats one particle field behind the conversation with fullscreen and image fallback", () => {
+  assert.match(voiceHTML, /id="sceneParticleField"/);
   assert.match(voiceHTML, /id="sceneParticleStage"/);
   assert.match(voiceHTML, /id="sceneParticleDialog"/);
   assert.match(voiceHTML, /import\('\/static\/scene-particle-visual\/index\.js'\)/);
   assert.match(voiceHTML, /window\.PangSceneParticleVisual/);
   assert.match(voiceHTML, /sceneParticleDialogMount\.appendChild\(sceneParticleStage\)/);
-  assert.match(voiceHTML, /sceneVisualSlot\.insertBefore\(sceneParticleStage/);
+  assert.match(voiceHTML, /sceneParticleField\.insertBefore\(sceneParticleStage/);
   assert.match(voiceHTML, /sceneImage\.src = project\.image_url/);
-  assert.match(voiceHTML, /sceneSetAgentVisualActive\(!particlesActive\)/);
+  assert.match(voiceHTML, /classList\.add\('has-scene-field'/);
   assert.match(voiceHTML, /sceneSetAgentVisualActive\(true\)/);
-  assert.match(voiceRoomCSS, /\.scene-visual-slot\.is-particle-ready \.scene-image \{[\s\S]{0,180}opacity: 0\.07/);
-  assert.match(voiceRoomCSS, /object-fit: contain/);
+  assert.match(voiceHTML, /sceneSetAgentVisualActive\(false\)/);
+  assert.match(voiceRoomCSS, /\.scene-particle-field\.is-particle-ready \.scene-image \{[\s\S]{0,80}opacity: 0/);
+  assert.match(voiceRoomCSS, /\.scene-particle-field\.is-particle-ready \.scene-particle-stage \{[\s\S]{0,80}opacity: 1/);
+  assert.match(voiceRoomCSS, /object-fit: cover/);
   assert.match(voiceRoomCSS, /\.scene-particle-stage\.is-immersive/);
-  assert.match(voiceRoomCSS, /touch-action: pan-y/);
   assert.match(voiceRoomCSS, /touch-action: none/);
 });

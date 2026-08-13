@@ -8,9 +8,9 @@ import {
 } from "./core.js";
 
 const PRESETS = Object.freeze({
-  still: Object.freeze({ uFlowSpeed: 0.12, uDispersion: 0.04, uDepth: 1.55, uPointSize: 2.05 }),
-  ethereal: SCENE_PARTICLE_DEFAULTS,
-  dissolve: Object.freeze({ uFlowSpeed: 0.72, uDispersion: 1.5, uDepth: 2.25, uPointSize: 2.1 }),
+  still: SCENE_PARTICLE_DEFAULTS,
+  ethereal: Object.freeze({ uFlowSpeed: 0.22, uDispersion: 0.1, uDepth: 1.45, uPointSize: 1.12 }),
+  dissolve: Object.freeze({ uFlowSpeed: 0.58, uDispersion: 1.15, uDepth: 1.85, uPointSize: 1.18 }),
 });
 
 const vertexShader = /* glsl */ `
@@ -33,6 +33,8 @@ const vertexShader = /* glsl */ `
   uniform float uLayer;
   uniform float uHaloScale;
   uniform float uDetailScale;
+  uniform float uWorldWidth;
+  uniform float uWorldHeight;
   uniform vec3 uPointer;
   uniform float uPointerStrength;
   uniform float uPressStrength;
@@ -171,15 +173,26 @@ const vertexShader = /* glsl */ `
     displaced.xy += tangent * pulseBand * pulseDecay * 0.035;
     displaced.z += pulseBand * pulseDecay * 0.12;
 
+    float halfW = max(0.001, uWorldWidth * 0.5);
+    float halfH = max(0.001, uWorldHeight * 0.5);
+    float nx = abs(position.x) / halfW;
+    float ny = abs(position.y) / halfH;
+    float frame = max(nx, ny);
+    float corner = nx * ny;
+    float grain = snoise(vec3(position.xy * 1.7, aRandom.z * 4.2));
+    float edgeMix = frame * 0.78 + corner * 0.34 + grain * 0.14;
+    float edgeKeep = 1.0 - smoothstep(0.52, 1.04, edgeMix);
+    displaced += flow * (1.0 - edgeKeep) * 0.18 * uMotionScale;
+
     displaced.z = clamp(displaced.z, -1.05, 1.18);
     vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    float perspectiveScale = clamp(7.0 / max(2.0, -mvPosition.z), 0.62, 1.72);
-    float structureSize = mix(0.82, 1.18, aVisualWeight) * mix(0.94, 1.12, aEdge);
-    float layerScale = mix(1.0, 2.25 * uHaloScale, uLayer);
-    gl_PointSize = clamp(uPointSize * uPixelRatio * perspectiveScale * structureSize * layerScale * 1.22, 1.0, mix(16.0, 26.0, uLayer));
-    float densityAlpha = mix(0.4, 1.0, aVisualWeight);
-    vOpacity = aOpacity * densityAlpha * uOpacity * localReveal;
+    float perspectiveScale = clamp(7.0 / max(2.0, -mvPosition.z), 0.72, 1.28);
+    float structureSize = mix(0.9, 1.08, aVisualWeight) * mix(0.96, 1.06, aEdge);
+    float layerScale = mix(1.0, 1.55 * uHaloScale, uLayer);
+    gl_PointSize = clamp(uPointSize * uPixelRatio * perspectiveScale * structureSize * layerScale, 0.75, mix(6.5, 11.0, uLayer));
+    float densityAlpha = mix(0.55, 1.0, aVisualWeight);
+    vOpacity = aOpacity * densityAlpha * uOpacity * localReveal * mix(0.04, 1.0, edgeKeep);
   }
 `;
 
@@ -261,8 +274,10 @@ function createSharedUniforms(values, reducedMotion) {
     uOpacity: { value: 1 },
     uMotionScale: { value: reducedMotion ? 0 : 1 },
     uHaloScale: { value: 1 },
-    uHaloAlpha: { value: 0.24 },
+    uHaloAlpha: { value: 0.14 },
     uDetailScale: { value: 1 },
+    uWorldWidth: { value: 6 },
+    uWorldHeight: { value: 4 },
     uPointer: { value: new THREE.Vector3() },
     uPointerStrength: { value: 0 },
     uPressStrength: { value: 0 },
@@ -327,7 +342,7 @@ export class SceneParticleVisual {
     this.qualityLevel = 0;
     this.qualityLabel = "high";
     this.dprScale = 1;
-    this.haloEnabled = true;
+    this.haloEnabled = !this.reducedMotion;
     this.detailScale = 1;
     this.frameSamples = [];
     this.slowWindows = 0;
@@ -570,6 +585,10 @@ export class SceneParticleVisual {
     this.step = attributes.step;
     this.worldWidth = attributes.worldWidth;
     this.worldHeight = attributes.worldHeight;
+    if (this.uniforms) {
+      this.uniforms.uWorldWidth.value = this.worldWidth;
+      this.uniforms.uWorldHeight.value = this.worldHeight;
+    }
     this.resize();
   }
 
@@ -578,6 +597,8 @@ export class SceneParticleVisual {
     const uniforms = createSharedUniforms(this.uniformValues, false);
     uniforms.uReveal.value = 1;
     uniforms.uDispersion.value = Math.max(0.7, this.uniformValues.uDispersion);
+    uniforms.uWorldWidth.value = this.worldWidth;
+    uniforms.uWorldHeight.value = this.worldHeight;
     const coreMaterial = createLayerMaterial(uniforms, 0);
     const haloMaterial = createLayerMaterial(uniforms, 1);
     const core = new THREE.Points(geometry, coreMaterial);
@@ -643,8 +664,8 @@ export class SceneParticleVisual {
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
     const verticalDistance = (this.worldHeight * 0.5) / Math.tan(halfFov);
     const horizontalDistance = (this.worldWidth * 0.5) / (Math.tan(halfFov) * this.camera.aspect);
-    const fitMargin = this.immersive ? 1.1 : 1.08;
-    this.camera.position.z = Math.max(4.5, Math.max(verticalDistance, horizontalDistance) * fitMargin + 1.18);
+    const coverMargin = this.immersive ? 0.94 : 0.9;
+    this.camera.position.z = Math.max(3.8, Math.min(verticalDistance, horizontalDistance) * coverMargin + 0.55);
     this.camera.near = Math.max(0.1, this.camera.position.z - 4.0);
     this.camera.far = this.camera.position.z + 5.0;
     this.camera.updateProjectionMatrix();
@@ -771,8 +792,8 @@ export class SceneParticleVisual {
   applyQualitySettings() {
     if (!this.uniforms) return;
     this.uniforms.uDetailScale.value = this.detailScale;
-    this.uniforms.uHaloScale.value = this.haloEnabled ? 1 : 0.78;
-    this.uniforms.uHaloAlpha.value = this.haloEnabled ? 0.24 : 0.1;
+    this.uniforms.uHaloScale.value = this.haloEnabled ? 0.82 : 0.62;
+    this.uniforms.uHaloAlpha.value = this.haloEnabled ? 0.14 : 0.08;
     if (this.haloPoints) this.haloPoints.visible = this.haloEnabled;
     this.updateDebugPanel();
   }
@@ -807,7 +828,7 @@ export class SceneParticleVisual {
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
-    reset.onclick = () => this.setPreset("ethereal");
+    reset.onclick = () => this.setPreset("still");
     const pause = document.createElement("button");
     pause.type = "button";
     pause.textContent = "Pause";

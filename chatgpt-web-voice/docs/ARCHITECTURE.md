@@ -460,14 +460,15 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 
 | 职责 | 说明 |
 |---|---|
-| 候选编排 | 后端从 SQLite 读取该 owner 的会话消息（客户端不上传 transcript），限制最近 40 条 / 16000 字，交给文本模型生成严格 JSON：可修正摘要 + 恰好 3 个互不重复的普通生活时刻，每个时刻必须带「看得见的改变」与「仍然存在的现实代价」 |
+| 候选编排 | 后端从 SQLite 读取该 owner 的会话消息（客户端不上传 transcript），限制最近 40 条 / 16000 字，交给文本模型生成严格 JSON：可修正摘要 + 恰好 3 个互不重复的「假如我是……」普通人身份，每个身份必须带「看得见的改变」与「仍然存在的现实代价」；title 必须以「假如我是」开头，禁止照抄于东来原篇身份（除非对话处境确实如此） |
 | 拒绝生成 | 对话不足、自伤/伤人/严重危机、露骨性内容、涉未成年人敏感内容 → `can_generate=false` / `blocked`，不进入生图 |
-| 画面编排 | 用户确认摘要并选择时刻后，文本模型产出 `SceneBrief`；服务端用统一 Prompt Builder（Brief 事实 + 统一视觉基线 + negative constraints）构造最终图片 Prompt，**不拼接对话原文**；视觉基线明确「画布严格 3:2 landscape，禁止 panoramic / 超宽银幕 / 竖向 / 方形」 |
+| 画面与短文编排 | 用户确认摘要并选择身份后，文本模型产出 `SceneBrief`（含 `essay_title` / `essay` / `closing` 与画面字段）；服务端用统一 Prompt Builder（Brief 画面事实 + 统一视觉基线 + negative constraints）构造最终图片 Prompt，**不拼接对话原文，也不把短文烧进图片**；视觉基线为「3:2 landscape 整屏插画 / 绘本式全景，上三分之一偏空，禁止 panoramic / 超宽银幕 / 竖向 / 方形 / 画面内文字」 |
+| 完成态 | 粒子画面铺在对话背后浮动，边缘溶进房间；工作室只保留标题、短文与操作，不再用卡片舞台框住插画。沉浸查看铺满视口，底部只留标题与收束句。旧 `completed` 记录若无 `essay` 则回退为 caption 布局。图片像素内仍无文字 |
 | 异步生图 | 有界队列（默认并发 2，`VOICE_SCENE_GENERATION_CONCURRENCY`），`queued → composing → generating → completed/failed` 状态写入 SQLite；队列满返回 429；同一 scene 不会重复启动 |
 | 双 Provider | **文本编排（`HTTPTextProvider`，`VOICE_SCENE_AI_*`）只调用 `/v1/chat/completions`**；**图片生成（`OpenAIImageProvider`，`IMAGE_API_*`）只调用 `/v1/images/generations`**。两套凭据完全隔离，互不回退、互不复用，也**绝不使用账号池的 ChatGPT Web `access_token`** |
 | 图片请求 | 固定 `model=IMAGE_MODEL / prompt / n=1 / size=1536x1024 / quality=standard`，**不发送 `response_format` 与 `output_format`**；仅一次传输重试（临时网络错误与 408/409/429/500/502/503/504，500ms–1s 可取消退避），400/401/403/404 及解析/比例/解码类错误绝不重试 |
 | 响应兼容 | 依次支持 `data[0].b64_json`、`data[0].b64`、base64 data URL（`data:image/...;base64,`）、`data[0].url`（仅 HTTPS，服务端立即下载、临时 URL 永不落库）、HTTP 原始图片字节响应；不信 JSON 声明的 MIME，一律以魔数识别真实格式（仅 PNG/JPEG/WebP） |
-| 归一化 | 宽高比相对误差 ≤ 0.5% 才通过（`3072x2048` 通过、`1774x887` 拒绝）；非精确 `1536x1024` 用 Lanczos-3 确定性缩放（不裁切、不拉伸错误比例、不改方向）；PNG/JPEG 保持原格式，WebP 无可用 encoder 时归一化为 PNG；精确 `1536x1024` 原样保留；最终扩展名 / MIME / 字节格式三者一致 |
+| 归一化 | 宽高比相对误差 ≤ 0.5% 才通过，接受 **3:2 与 5:4** 两种画布（`3072x2048`、`1402x1122` 通过，`1774x887` 拒绝；5:4 常见于中转渠道忽略 `size` 参数时的输出）；非精确 `1536x1024` 用 Lanczos-3 确定性缩放（不裁切、不拉伸错误比例、不改方向）；PNG/JPEG 保持原格式，WebP 无可用 encoder 时归一化为 PNG；精确 `1536x1024` 原样保留；最终扩展名 / MIME / 字节格式三者一致 |
 | 文件 | 图片保存在 `VOICE_DATA_DIR/scenes/`，先写临时文件再原子 rename；不写入 SQLite；下载/展示经 owner 鉴权的 `/api/scenes/{id}/image`，不暴露真实路径 |
 | 生命周期 | 删除 scene / conversation 时同步删除图片文件；启动时遗留的 `queued/composing/generating` 标为 `failed` |
 | 错误边界 | 公共错误只含稳定文案（`image provider request failed`、`image provider returned HTTP 429`、`generated image aspect ratio does not match 1536x1024` 等）；日志只记录 scene id / provider / model / HTTP status / attempt / 耗时 / 原始与最终格式尺寸 / 字节数，不记录 Prompt、Key、Authorization、供应商 body 或本地路径 |
@@ -475,7 +476,7 @@ Production 强制校验证书；development 才允许 `VOICE_SKIP_SSL_VERIFY`。
 API（沿用 `/api` + owner + JSON 错误风格）：
 
 ```text
-POST   /api/conversations/{id}/scene-drafts    # 读取会话 → 摘要 + 3 候选
+POST   /api/conversations/{id}/scene-drafts    # 读取会话 → 摘要 + 3 个假如身份
 GET    /api/conversations/{id}/scenes          # 历史与活动任务（刷新/切会话恢复）
 GET    /api/scenes/{id}                        # 轮询状态
 PATCH  /api/scenes/{id}                        # 修正摘要 / 选择候选（服务端从候选列表解析）
@@ -579,9 +580,9 @@ DELETE /api/scenes/{id}
 | `parent_scene_id` | 「按这个时刻再生成一次」的来源 scene（新 scene 溯源） |
 | `status` | `draft / queued / composing / generating / completed / failed / blocked` |
 | `approved_summary` | 用户可修正处境摘要（≤600 字符） |
-| `candidates_json` / `selected_candidate_json` | Go 结构体序列化写入、读取时严格校验；候选固定 3 个 |
-| `scene_brief_json` | 画面编排结果（不含对话原文） |
-| `caption` / `micro_action` / `disclaimer` | 完成态文案 |
+| `candidates_json` / `selected_candidate_json` | Go 结构体序列化写入、读取时严格校验；候选固定 3 个「假如我是」身份 |
+| `scene_brief_json` | 画面编排结果 + 假如短文（`essay_title` / `essay` / `closing`，不含对话原文）；读取时提升到 Project JSON |
+| `caption` / `micro_action` / `disclaimer` | 完成态短文案（历史缩略与微行动；短文正文在 brief 中） |
 | `prompt_version` / `provider` / `model` | 生成溯源 |
 | `image_path` / `image_mime` / `image_width` / `image_height` | 文件索引（图片字节不落库，位于 `data/scenes/`） |
 | `error_message` / `blocked_reason` / `risk_flags` | 失败与拒绝原因（截断、脱敏） |
@@ -724,4 +725,4 @@ internal/app              装配、TLS、静态路由、root mux
 
 ## 15. 一句话总结
 
-**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的实时媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本；内置页面另以 fail-open 的旁路分片保存用户麦克风编码副本和聊天快照，而下游媒体及 AI 远端音轨仍不进入网关。「另一种可能 · 生活的一帧」是独立的场景编排子系统：从已保存对话生成可修正摘要与 3 个候选时刻，经用户选择后用独立外部 AI Key 异步生图，图片落盘 `data/scenes` 而不进 SQLite，owner 鉴权后经 API 访问，账号池 token 永不参与生图。**
+**chatgpt-web-voice 把 ChatGPT 网页语音拆成「可池化的信令与凭证代理」和「客户端直连的实时媒体 / 图片字节面」：用密封 web token 账号池向 `/realtime/wm` 换 SDP，用内存绑定 + `call_sessions` 粘账号并 best-effort 续对话，用直传凭证支持通话中图片，用 SQLite 管理账号、Key、会话元数据与本地文本；内置页面另以 fail-open 的旁路分片保存用户麦克风编码副本和聊天快照，而下游媒体及 AI 远端音轨仍不进入网关。「另一种可能 · 生活的一帧」是独立的场景编排子系统：从已保存对话生成可修正摘要与 3 个「假如我是…」身份，经用户选择后用独立外部 AI Key 异步生成第一人称短文与整屏插画，中文由前端排版、图片落盘 `data/scenes` 而不进 SQLite，owner 鉴权后经 API 访问，账号池 token 永不参与生图。**

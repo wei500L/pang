@@ -657,6 +657,10 @@ func scanProject(scanner storepkg.Scanner) (Project, error) {
 			return Project{}, fmt.Errorf("scene brief corrupted: %w", err)
 		}
 		project.sceneBrief = brief
+		project.EssayTitle = strings.TrimSpace(brief.EssayTitle)
+		project.SeriesLabel = strings.TrimSpace(brief.SeriesLabel)
+		project.Essay = strings.TrimSpace(brief.Essay)
+		project.Closing = strings.TrimSpace(brief.Closing)
 	}
 	project.BlockedReason = blockedReason
 	project.RiskFlags = splitRiskFlags(riskFlags)

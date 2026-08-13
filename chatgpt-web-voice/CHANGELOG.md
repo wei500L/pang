@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 「另一种可能 · 生活的一帧」改为个性化「假如我是…」：3 个身份候选、第一人称短文与整屏插画；完成态粒子铺在对话背后浮动，不再用卡片舞台；采样更密、点更细，边缘溶进画面。沉浸态铺满视口，底部只留标题与收束句。图片像素内仍无文字；旧记录无短文时回退 caption 布局。
 - Added fail-open microphone recording for the built-in `/voice` page: 16 kbps `MediaRecorder` audio is uploaded in 5-second bounded chunks without changing the direct WebRTC path. SQLite stores recording metadata and transcript snapshots, files live under `data/recordings`, and the new admin `/records` page supports search, playback, transcript review, and deletion.
 - Hardened recording isolation with active-call ownership checks, one recording per voice session, global/per-owner active caps, atomic chunk publication, per-recording operation locks, orphan recovery, bounded transcript snapshots, fixed-cap rate-limit buckets, disk safety reserves, and a global browser upload budget that yields to new WebRTC calls.
 - Voice page titles: first user utterance during a call; fetch chatgpt.com title once on hangup only. Manual renames persist `conversations.title_locked` so hangup never overwrites after refresh.

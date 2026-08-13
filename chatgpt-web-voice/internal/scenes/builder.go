@@ -11,7 +11,7 @@ import (
 // structured brief, the unified visual baseline, and negative constraints.
 func BuildImagePrompt(brief SceneBrief) string {
 	var builder strings.Builder
-	builder.WriteString("请生成一幅严格 3:2 横向构图的、当代普通中国城市生活电影静帧画面。整体画布为 3:2 landscape，禁止 panoramic、超宽银幕、竖向构图和方形构图。\n\n")
+	builder.WriteString("请生成一幅严格 3:2 横向构图的、当代普通中国生活整屏插画 / 绘本式全景，作为海报底图。整体画布为 3:2 landscape，禁止 panoramic、超宽银幕、竖向构图和方形构图。画面上三分之一偏空、低对比。\n\n")
 
 	writeField := func(label, value string) {
 		if value = strings.TrimSpace(value); value != "" {

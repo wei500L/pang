@@ -49,7 +49,7 @@ const (
 )
 
 // SceneTextConfig holds the scene text-orchestration provider settings
-// ("另一种可能 · 生活的一帧" candidate moments and SceneBrief). It reads
+// ("另一种可能 · 生活的一帧" 假如身份候选、短文与 SceneBrief). It reads
 // VOICE_SCENE_AI_* and only calls /v1/chat/completions. It never touches the
 // ChatGPT Web account pool nor the IMAGE_API_* credentials.
 type SceneTextConfig struct {

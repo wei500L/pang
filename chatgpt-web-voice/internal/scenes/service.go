@@ -12,7 +12,7 @@ import (
 )
 
 // PromptVersion identifies the exact prompt-set used for a scene.
-const PromptVersion = "scene-prompts-v1"
+const PromptVersion = "scene-prompts-v2"
 
 // Service orchestrates the scene lifecycle: draft creation from saved
 // conversation messages, user edits, generation enqueueing, and file lifecycle
@@ -400,6 +400,11 @@ func (s *Service) runGeneration(ctx context.Context, project Project) {
 			s.failGeneration(ctx, owner, id, err)
 			return
 		}
+		if strings.TrimSpace(composed.SeriesLabel) == "" {
+			composed.SeriesLabel = DefaultSeriesLabel
+		} else {
+			composed.SeriesLabel = truncateRunes(composed.SeriesLabel, MaxSeriesLabelRunes)
+		}
 		brief = composed
 		if err := s.store.SaveBrief(owner, id, brief, s.imageProvider, s.imageModel, PromptVersion); err != nil {
 			s.failGeneration(ctx, owner, id, errors.New("scene brief storage failed"))
@@ -639,6 +644,9 @@ func validateCandidateResult(result CandidateResult) ([]Candidate, error) {
 		if err := requireNonEmpty(candidate.Title, "candidate title is required"); err != nil {
 			return nil, &ErrProviderResponse{Message: "text model returned a candidate without a title"}
 		}
+		if !hasIfIWerePrefix(candidate.Title) {
+			return nil, &ErrProviderResponse{Message: "text model returned a candidate without a 假如我是 title"}
+		}
 		if err := requireNonEmpty(candidate.Moment, "candidate moment is required"); err != nil {
 			return nil, &ErrProviderResponse{Message: "text model returned a candidate without a moment"}
 		}
@@ -658,6 +666,18 @@ func validateCandidateResult(result CandidateResult) ([]Candidate, error) {
 
 // validateBrief checks the composed brief has everything needed for rendering.
 func validateBrief(brief SceneBrief) error {
+	if err := requireNonEmpty(brief.EssayTitle, "scene brief essay title is required"); err != nil {
+		return &ErrProviderResponse{Message: "text model returned a brief without an essay title"}
+	}
+	if !hasIfIWerePrefix(brief.EssayTitle) {
+		return &ErrProviderResponse{Message: "text model returned an essay title without a 假如我是 prefix"}
+	}
+	if err := requireNonEmpty(brief.Essay, "scene brief essay is required"); err != nil {
+		return &ErrProviderResponse{Message: "text model returned a brief without an essay"}
+	}
+	if err := requireNonEmpty(brief.Closing, "scene brief closing is required"); err != nil {
+		return &ErrProviderResponse{Message: "text model returned a brief without a closing"}
+	}
 	if err := requireNonEmpty(brief.Caption, "scene brief caption is required"); err != nil {
 		return &ErrProviderResponse{Message: "text model returned a brief without a caption"}
 	}
@@ -673,6 +693,15 @@ func validateBrief(brief SceneBrief) error {
 	if err := requireNonEmpty(brief.Disclaimer, "scene brief disclaimer is required"); err != nil {
 		return &ErrProviderResponse{Message: "text model returned a brief without a disclaimer"}
 	}
+	if len([]rune(brief.EssayTitle)) > MaxEssayTitleRunes {
+		return &ErrProviderResponse{Message: "scene brief essay title is too long"}
+	}
+	if len([]rune(brief.Essay)) > MaxEssayRunes {
+		return &ErrProviderResponse{Message: "scene brief essay is too long"}
+	}
+	if len([]rune(brief.Closing)) > MaxClosingRunes {
+		return &ErrProviderResponse{Message: "scene brief closing is too long"}
+	}
 	if len([]rune(brief.Caption)) > MaxCaptionRunes {
 		return &ErrProviderResponse{Message: "scene brief caption is too long"}
 	}
@@ -680,4 +709,11 @@ func validateBrief(brief SceneBrief) error {
 		return &ErrProviderResponse{Message: "scene brief micro action is too long"}
 	}
 	return nil
+}
+
+// hasIfIWerePrefix reports whether title starts with 假如我是, ignoring
+// regular and full-width spaces so "假如 我是……" still matches.
+func hasIfIWerePrefix(title string) bool {
+	compact := strings.NewReplacer(" ", "", "　", "", "\u00a0", "").Replace(strings.TrimSpace(title))
+	return strings.HasPrefix(compact, "假如我是")
 }

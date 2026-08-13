@@ -1,8 +1,9 @@
 // Package scenes implements the "另一种可能 · 生活的一帧" scene subsystem:
 // after a personal-mode conversation ends, the user may turn their situation
-// into one visible ordinary-life frame. It is an independent orchestration and
-// generation subsystem that never touches the WebRTC state machine and never
-// reuses the ChatGPT Web account pool for image generation.
+// into a first-person "假如我是…" essay and one illustrated poster frame.
+// It is an independent orchestration and generation subsystem that never
+// touches the WebRTC state machine and never reuses the ChatGPT Web account
+// pool for image generation.
 package scenes
 
 import (
@@ -28,7 +29,7 @@ const (
 )
 
 const (
-	// CandidateCount is the fixed number of ordinary-life moments.
+	// CandidateCount is the fixed number of "假如我是…" identities.
 	CandidateCount = 3
 	// MaxApprovedSummaryRunes bounds the user-editable situation summary.
 	MaxApprovedSummaryRunes = 600
@@ -36,10 +37,17 @@ const (
 	MaxExcerptMessages = 40
 	MaxExcerptRunes    = 16000
 	// MaxBriefRunes bounds one composed scene brief before storage.
-	MaxBriefRunes = 4000
+	MaxBriefRunes = 8000
 	// MaxCaptionRunes / MaxMicroActionRunes bound user-visible scene copy.
 	MaxCaptionRunes     = 200
 	MaxMicroActionRunes = 300
+	// MaxEssayTitleRunes / MaxEssayRunes / MaxClosingRunes bound the poster copy.
+	MaxEssayTitleRunes  = 40
+	MaxEssayRunes       = 1200
+	MaxClosingRunes     = 80
+	MaxSeriesLabelRunes = 80
+	// DefaultSeriesLabel is used when the brief omits series_label.
+	DefaultSeriesLabel = "另一种可能 · 假如我是「萤火虫」"
 	// MaxTensionRunes / MaxLensRunes bound candidate metadata fields.
 	MaxTensionRunes = 80
 	MaxLensRunes    = 200
@@ -72,7 +80,7 @@ var ErrStateConflict = errors.New("scene state conflict")
 // Error is a validation error safe to surface to API callers.
 type Error = storepkg.Error
 
-// Candidate is one ordinary-life moment the user may choose.
+// Candidate is one "假如我是…" identity the user may choose.
 type Candidate struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
@@ -109,6 +117,10 @@ type SceneBrief struct {
 	Camera              string   `json:"camera"`
 	Lighting            string   `json:"lighting"`
 	NegativeConstraints []string `json:"negative_constraints"`
+	EssayTitle          string   `json:"essay_title,omitempty"`
+	SeriesLabel         string   `json:"series_label,omitempty"`
+	Essay               string   `json:"essay,omitempty"`
+	Closing             string   `json:"closing,omitempty"`
 	Caption             string   `json:"caption"`
 	MicroAction         string   `json:"micro_action"`
 	Disclaimer          string   `json:"disclaimer"`
@@ -131,7 +143,7 @@ type BriefInput struct {
 }
 
 // ImageInput is the final image-generation request. The current product only
-// renders one landscape life-film frame from a text prompt: canvas size
+// renders one landscape illustrated poster frame from a text prompt: canvas size
 // (1536x1024), quality (standard) and count (n=1) are fixed business presets
 // owned by the image provider, not per-request parameters.
 //
@@ -182,6 +194,10 @@ type Project struct {
 	CultureLens       string      `json:"culture_lens,omitempty"`
 	Candidates        []Candidate `json:"candidates"`
 	SelectedCandidate *Candidate  `json:"selected_candidate,omitempty"`
+	EssayTitle        string      `json:"essay_title,omitempty"`
+	SeriesLabel       string      `json:"series_label,omitempty"`
+	Essay             string      `json:"essay,omitempty"`
+	Closing           string      `json:"closing,omitempty"`
 	Caption           string      `json:"caption,omitempty"`
 	MicroAction       string      `json:"micro_action,omitempty"`
 	Disclaimer        string      `json:"disclaimer,omitempty"`

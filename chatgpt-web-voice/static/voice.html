@@ -1860,6 +1860,11 @@
     </div>
 
     <main class="conversation-shell">
+      <div id="sceneParticleField" class="scene-particle-field" hidden>
+        <div id="sceneParticleStage" class="scene-particle-stage" aria-hidden="true"></div>
+        <img id="sceneImage" class="scene-image" alt="" />
+        <div class="scene-particle-veil" aria-hidden="true"></div>
+      </div>
       <div id="agentVisualLayer" class="agent-visual-layer" aria-hidden="true"></div>
       <section class="chat-stage">
         <div class="chat-inner">
@@ -1890,16 +1895,16 @@
               <div id="sceneStateEntry" class="scene-panel scene-entry" hidden>
                 <div class="scene-entry-copy">
                   <h2 data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
-                  <p data-i18n="sceneEntryDesc">把刚才聊到的生活，变成一个可以看见的普通瞬间。</p>
+                  <p data-i18n="sceneEntryDesc">把刚才聊到的处境，写成一篇「假如我是…」，再配上一幅画。</p>
                 </div>
-                <button type="button" id="btnSceneOpen" class="scene-entry-button" data-i18n="sceneOpenButton">把另一种可能变成一幅画</button>
+                <button type="button" id="btnSceneOpen" class="scene-entry-button" data-i18n="sceneOpenButton">把另一种可能写成一篇假如</button>
               </div>
               <div id="sceneStateLoading" class="scene-panel scene-loading" hidden>
                 <p role="status" aria-live="polite" data-i18n="sceneLoading">正在整理刚才的对话…</p>
               </div>
               <div id="sceneStateSelection" class="scene-panel scene-selection" hidden>
                 <div class="scene-selection-head">
-                  <h2 data-i18n="sceneSelectTitle">你更想先看见哪一刻？</h2>
+                  <h2 data-i18n="sceneSelectTitle">你更想先过哪一种假如？</h2>
                   <button type="button" id="btnSceneClose" class="scene-close-button" data-i18n="sceneClose">收起</button>
                 </div>
                 <label class="scene-summary-field" for="sceneSummaryInput">
@@ -1907,9 +1912,9 @@
                   <textarea id="sceneSummaryInput" rows="3" maxlength="600"></textarea>
                 </label>
                 <p class="scene-fixed-note" data-i18n="sceneFixedNote">这不是对未来的预测，而是基于你提供的处境构造的目标情境。</p>
-                <div id="sceneCandidates" class="scene-candidates" role="radiogroup" data-i18n-aria="sceneCandidatesAria" aria-label="生活时刻候选"></div>
+                <div id="sceneCandidates" class="scene-candidates" role="radiogroup" data-i18n-aria="sceneCandidatesAria" aria-label="假如身份候选"></div>
                 <div class="scene-selection-actions">
-                  <button type="button" id="btnSceneGenerate" class="scene-generate-button" disabled data-i18n="sceneGenerateButton">生成这一帧</button>
+                  <button type="button" id="btnSceneGenerate" class="scene-generate-button" disabled data-i18n="sceneGenerateButton">生成这一篇假如</button>
                 </div>
               </div>
               <div id="sceneStateProgress" class="scene-panel scene-progress" hidden>
@@ -1929,31 +1934,30 @@
               </div>
               <div id="sceneStateCompleted" class="scene-panel scene-completed" hidden>
                 <div class="scene-result-head">
-                  <h2 data-i18n="sceneTitle">另一种可能 · 生活的一帧</h2>
+                  <h2 id="sceneResultTitle">另一种可能 · 生活的一帧</h2>
                   <p id="sceneDisclaimer" class="scene-disclaimer"></p>
                 </div>
-                <div id="sceneVisualSlot" class="scene-visual-slot">
-                  <div id="sceneParticleStage" class="scene-particle-stage" aria-hidden="true"></div>
-                  <img id="sceneImage" class="scene-image" alt="" />
-                  <div class="scene-visual-vignette" aria-hidden="true"></div>
-                  <button type="button" id="btnSceneImmersive" class="scene-immersive-button">
-                    <span class="material-symbols-rounded" aria-hidden="true">fullscreen</span>
-                    <span data-i18n="sceneImmersive">沉浸查看</span>
-                  </button>
-                </div>
                 <p id="sceneCaption" class="scene-caption"></p>
+                <p id="sceneClosing" class="scene-closing" hidden></p>
+                <div id="sceneEssayBlock" class="scene-essay-block" hidden>
+                  <div id="sceneEssay" class="scene-essay"></div>
+                </div>
                 <div class="scene-micro-action">
                   <span class="scene-micro-action-label" data-i18n="sceneMicroActionLabel">一个可以开始的地方</span>
                   <p id="sceneMicroAction"></p>
                 </div>
                 <div class="scene-result-actions">
+                  <button type="button" id="btnSceneImmersive" class="scene-ghost-button">
+                    <span class="material-symbols-rounded" aria-hidden="true">fullscreen</span>
+                    <span data-i18n="sceneImmersive">沉浸查看</span>
+                  </button>
                   <button type="button" id="btnSceneDownload" class="scene-ghost-button" data-i18n="sceneDownload">下载图片</button>
-                  <button type="button" id="btnSceneRegenerate" class="scene-ghost-button" data-i18n="sceneRegenerate">按这个时刻再生成一次</button>
-                  <button type="button" id="btnSceneReselect" class="scene-ghost-button" data-i18n="sceneReselect">重新选择时刻</button>
+                  <button type="button" id="btnSceneRegenerate" class="scene-ghost-button" data-i18n="sceneRegenerate">按这个假如再生成一次</button>
+                  <button type="button" id="btnSceneReselect" class="scene-ghost-button" data-i18n="sceneReselect">重新选择假如</button>
                 </div>
               </div>
               <div id="sceneHistory" class="scene-history" hidden>
-                <div class="scene-history-title" data-i18n="sceneHistoryLabel">之前的生活一帧</div>
+                <div class="scene-history-title" data-i18n="sceneHistoryLabel">之前的假如</div>
                 <div id="sceneHistoryList" class="scene-history-list"></div>
               </div>
             </div>
@@ -2101,6 +2105,10 @@
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
         </button>
       </div>
+      <div id="sceneImmersiveEssay" class="scene-immersive-caption" hidden>
+        <h2 id="sceneImmersiveTitle" class="scene-immersive-title"></h2>
+        <p id="sceneImmersiveClosing" class="scene-immersive-closing"></p>
+      </div>
       <p class="scene-particle-dialog-hint" data-i18n="sceneImmersiveHint">移动指针感受画面的流动，按住可让粒子轻轻散开</p>
     </div>
   </dialog>
@@ -2205,7 +2213,11 @@
   var sceneBlockedReason = document.getElementById('sceneBlockedReason');
   var sceneFailedMessage = document.getElementById('sceneFailedMessage');
   var sceneDisclaimer = document.getElementById('sceneDisclaimer');
-  var sceneVisualSlot = document.getElementById('sceneVisualSlot');
+  var sceneResultTitle = document.getElementById('sceneResultTitle');
+  var sceneEssayBlock = document.getElementById('sceneEssayBlock');
+  var sceneEssay = document.getElementById('sceneEssay');
+  var sceneClosing = document.getElementById('sceneClosing');
+  var sceneParticleField = document.getElementById('sceneParticleField');
   var sceneParticleStage = document.getElementById('sceneParticleStage');
   var sceneImage = document.getElementById('sceneImage');
   var sceneCaption = document.getElementById('sceneCaption');
@@ -2216,6 +2228,10 @@
   var btnSceneImmersive = document.getElementById('btnSceneImmersive');
   var sceneParticleDialog = document.getElementById('sceneParticleDialog');
   var sceneParticleDialogMount = document.getElementById('sceneParticleDialogMount');
+  var sceneParticleDialogTitle = document.getElementById('sceneParticleDialogTitle');
+  var sceneImmersiveEssay = document.getElementById('sceneImmersiveEssay');
+  var sceneImmersiveTitle = document.getElementById('sceneImmersiveTitle');
+  var sceneImmersiveClosing = document.getElementById('sceneImmersiveClosing');
   var btnSceneImmersiveClose = document.getElementById('btnSceneImmersiveClose');
 
   var pc = null;
@@ -2595,35 +2611,35 @@
       voiceDesc_vale: '聪颖好奇',
       sceneAria: '另一种可能 · 生活的一帧',
       sceneTitle: '另一种可能 · 生活的一帧',
-      sceneEntryDesc: '把刚才聊到的生活，变成一个可以看见的普通瞬间。',
-      sceneOpenButton: '把另一种可能变成一幅画',
+      sceneEntryDesc: '把刚才聊到的处境，写成一篇「假如我是…」，再配上一幅画。',
+      sceneOpenButton: '把另一种可能写成一篇假如',
       sceneLoading: '正在整理刚才的对话…',
-      sceneSelectTitle: '你更想先看见哪一刻？',
-      sceneCandidatesAria: '生活时刻候选',
+      sceneSelectTitle: '你更想先过哪一种假如？',
+      sceneCandidatesAria: '假如身份候选',
       sceneSummaryLabel: '处境摘要（可修改）',
       sceneFixedNote: '这不是对未来的预测，而是基于你提供的处境构造的目标情境。',
-      sceneGenerateButton: '生成这一帧',
+      sceneGenerateButton: '生成这一篇假如',
       sceneClose: '收起',
       scenePhaseQueued: '正在整理场景',
-      scenePhaseComposing: '正在构造画面',
-      scenePhaseGenerating: '正在生成生活的一帧',
+      scenePhaseComposing: '正在写下这篇假如',
+      scenePhaseGenerating: '正在生成插画',
       sceneDisclaimer: '目标情境，不是未来预测',
       sceneMicroActionLabel: '一个可以开始的地方',
       sceneDownload: '下载图片',
       sceneImmersive: '沉浸查看',
       sceneImmersiveClose: '退出沉浸查看',
       sceneImmersiveHint: '移动指针感受画面的流动，按住可让粒子轻轻散开',
-      sceneRegenerate: '按这个时刻再生成一次',
-      sceneReselect: '重新选择时刻',
+      sceneRegenerate: '按这个假如再生成一次',
+      sceneReselect: '重新选择假如',
       sceneRetry: '重试',
-      sceneHistoryLabel: '之前的生活一帧',
+      sceneHistoryLabel: '之前的假如',
       sceneNotConfigured: '场景生成功能尚未配置，语音对话不受影响。',
-      sceneNeedSelection: '先选择你想看见的那一帧',
+      sceneNeedSelection: '先选择你想看见的那一篇假如',
       sceneBlockedFallback: '当前对话还不适合生成生活情境，可以继续聊一会儿再试。',
-      sceneError: '生活一帧暂时失败了：{error}',
-      sceneBusy: '这一帧还在生成中，请稍候再试。',
+      sceneError: '这一篇假如暂时失败了：{error}',
+      sceneBusy: '这一篇假如还在生成中，请稍候再试。',
       sceneQueueFull: '生成队列暂时繁忙，请稍后再试。',
-      sceneWelcomeSaved: '这是之前生成的生活一帧'
+      sceneWelcomeSaved: '这是之前生成的假如'
     },
     en: {
       pageTitle: 'Voice Call',
@@ -2809,35 +2825,35 @@
       voiceDesc_vale: 'Bright & inquisitive',
       sceneAria: 'Another possibility · one frame of life',
       sceneTitle: 'Another possibility · one frame of life',
-      sceneEntryDesc: 'Turn the life you just talked about into one visible, ordinary moment.',
-      sceneOpenButton: 'Turn another possibility into a picture',
+      sceneEntryDesc: 'Turn the situation you just talked about into an “If I were…” essay, then pair it with a drawing.',
+      sceneOpenButton: 'Write another possibility as an If I were…',
       sceneLoading: 'Reading through the conversation…',
-      sceneSelectTitle: 'Which moment do you want to see first?',
-      sceneCandidatesAria: 'Moment candidates',
+      sceneSelectTitle: 'Which If I were… do you want first?',
+      sceneCandidatesAria: 'If I were… identities',
       sceneSummaryLabel: 'Situation summary (editable)',
       sceneFixedNote: 'This is not a prediction of the future; it is a goal scene built from the situation you shared.',
-      sceneGenerateButton: 'Generate this frame',
+      sceneGenerateButton: 'Generate this If I were…',
       sceneClose: 'Close',
       scenePhaseQueued: 'Organizing the scene',
-      scenePhaseComposing: 'Composing the picture',
-      scenePhaseGenerating: 'Rendering one frame of life',
+      scenePhaseComposing: 'Writing the essay',
+      scenePhaseGenerating: 'Rendering the illustration',
       sceneDisclaimer: 'A goal scene, not a prediction of the future',
       sceneMicroActionLabel: 'A place to start',
       sceneDownload: 'Download image',
       sceneImmersive: 'Immersive view',
       sceneImmersiveClose: 'Exit immersive view',
       sceneImmersiveHint: 'Move to feel the flow; press and hold to gently disperse the particles',
-      sceneRegenerate: 'Generate this moment again',
-      sceneReselect: 'Choose another moment',
+      sceneRegenerate: 'Generate this If I were… again',
+      sceneReselect: 'Choose another If I were…',
       sceneRetry: 'Retry',
-      sceneHistoryLabel: 'Earlier frames',
+      sceneHistoryLabel: 'Earlier If I were…',
       sceneNotConfigured: 'Scene generation is not configured; voice chat is unaffected.',
-      sceneNeedSelection: 'Choose the frame you want to see first',
+      sceneNeedSelection: 'Choose the If I were… you want to see first',
       sceneBlockedFallback: 'This conversation is not ready for a scene yet — talk a little more and try again.',
-      sceneError: 'This frame failed for now: {error}',
-      sceneBusy: 'This frame is still generating — please try again in a moment.',
+      sceneError: 'This If I were… failed for now: {error}',
+      sceneBusy: 'This If I were… is still generating — please try again in a moment.',
       sceneQueueFull: 'Generation is busy right now — please try again in a moment.',
-      sceneWelcomeSaved: 'A scene you made earlier'
+      sceneWelcomeSaved: 'An If I were… you made earlier'
     }
   };
 
@@ -3981,25 +3997,32 @@
     if (window.PangAgentVisualReady && typeof window.PangAgentVisualReady.then === 'function') {
       window.PangAgentVisualReady.then(function (visual) {
         if (!visual || typeof visual.setActive !== 'function') return;
-        var particlesOwnFrame = sceneParticleVisual && sceneParticleVisual.active && sceneState === SCENE_STATE_COMPLETED;
+        var immersiveOpen = sceneParticleDialog && (sceneParticleDialog.open || sceneParticleDialog.hasAttribute('open'));
+        var fieldOpen = document.body.classList.contains('has-scene-field');
+        var particlesOwnFrame = sceneParticleVisual && sceneParticleVisual.active && sceneState === SCENE_STATE_COMPLETED && (immersiveOpen || fieldOpen);
         visual.setActive(active && !particlesOwnFrame);
       }).catch(function () {});
     }
   }
 
   function sceneReturnParticleStage() {
-    if (!sceneParticleStage || !sceneVisualSlot) return;
-    if (sceneParticleStage.parentNode !== sceneVisualSlot) {
-      sceneVisualSlot.insertBefore(sceneParticleStage, sceneImage || sceneVisualSlot.firstChild);
+    if (!sceneParticleStage || !sceneParticleField) return;
+    if (sceneParticleStage.parentNode !== sceneParticleField) {
+      sceneParticleField.insertBefore(sceneParticleStage, sceneParticleField.firstChild);
     }
     sceneParticleStage.classList.remove('is-immersive');
-    sceneVisualSlot.classList.remove('is-immersive-open');
+    sceneParticleField.classList.remove('is-immersive-open');
     if (sceneParticleVisual && typeof sceneParticleVisual.setImmersive === 'function') sceneParticleVisual.setImmersive(false);
     else if (sceneParticleVisual) sceneParticleVisual.resize();
+    sceneSetAgentVisualActive(!document.body.classList.contains('has-scene-field'));
   }
 
   function sceneCloseImmersive() {
     sceneReturnParticleStage();
+    if (sceneImmersiveEssay) sceneImmersiveEssay.hidden = true;
+    if (sceneParticleDialog) sceneParticleDialog.classList.remove('has-essay');
+    if (sceneParticleDialogTitle) sceneParticleDialogTitle.hidden = false;
+    if (sceneParticleDialog) sceneParticleDialog.setAttribute('aria-labelledby', 'sceneParticleDialogTitle');
     if (sceneParticleDialog && sceneParticleDialog.open) sceneParticleDialog.close();
     else if (sceneParticleDialog) sceneParticleDialog.removeAttribute('open');
     var returnFocus = sceneParticleDialogReturnFocus;
@@ -4010,10 +4033,27 @@
   function sceneOpenImmersive() {
     if (!sceneParticleVisual || !sceneParticleStage || !sceneParticleDialog || !sceneParticleDialogMount) return;
     sceneParticleDialogReturnFocus = document.activeElement;
-    sceneVisualSlot.classList.add('is-immersive-open');
+    sceneParticleField.classList.add('is-immersive-open');
     sceneParticleStage.classList.add('is-immersive');
     sceneParticleDialogMount.appendChild(sceneParticleStage);
+    var hasEssay = sceneHasEssay(sceneProject);
+    if (sceneParticleDialog) sceneParticleDialog.classList.toggle('has-essay', hasEssay);
+    if (sceneParticleDialogTitle) {
+      sceneParticleDialogTitle.hidden = false;
+      sceneParticleDialogTitle.textContent = t('sceneTitle');
+    }
+    if (sceneParticleDialog) {
+      sceneParticleDialog.setAttribute('aria-labelledby', 'sceneParticleDialogTitle');
+    }
+    if (sceneImmersiveEssay) {
+      sceneImmersiveEssay.hidden = !hasEssay;
+      if (hasEssay) {
+        if (sceneImmersiveTitle) sceneImmersiveTitle.textContent = (sceneProject && sceneProject.essay_title) || '';
+        if (sceneImmersiveClosing) sceneImmersiveClosing.textContent = (sceneProject && sceneProject.closing) || '';
+      }
+    }
     if (typeof sceneParticleVisual.setImmersive === 'function') sceneParticleVisual.setImmersive(true);
+    sceneSetAgentVisualActive(false);
     if (typeof sceneParticleDialog.showModal === 'function' && !sceneParticleDialog.open) sceneParticleDialog.showModal();
     else sceneParticleDialog.setAttribute('open', '');
     requestAnimationFrame(function () {
@@ -4036,29 +4076,36 @@
     sceneParticleVisual = null;
     sceneParticleImageURL = '';
     window.PangSceneParticleVisual = null;
-    if (sceneVisualSlot) sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading', 'is-particle-unavailable');
+    if (sceneParticleField) sceneParticleField.classList.remove('is-particle-ready', 'is-particle-loading', 'is-particle-unavailable');
+    document.body.classList.remove('has-scene-field');
+    if (sceneParticleField) sceneParticleField.hidden = true;
     sceneSetAgentVisualActive(true);
   }
 
   function sceneHandleParticleReady(event) {
-    if (!sceneVisualSlot || !sceneParticleVisual || sceneState !== SCENE_STATE_COMPLETED) return;
+    if (!sceneParticleField || !sceneParticleVisual || sceneState !== SCENE_STATE_COMPLETED) return;
     if (event.detail && event.detail.url && event.detail.url !== sceneParticleImageURL) return;
-    sceneVisualSlot.classList.remove('is-particle-loading', 'is-particle-unavailable');
-    sceneVisualSlot.classList.add('is-particle-ready');
-    var particlesActive = typeof sceneParticleVisual.canRender === 'function' ? sceneParticleVisual.canRender() : sceneParticleVisual.active;
-    sceneSetAgentVisualActive(!particlesActive);
+    sceneParticleField.classList.remove('is-particle-loading', 'is-particle-unavailable');
+    sceneParticleField.classList.add('is-particle-ready');
+    document.body.classList.add('has-scene-field');
+    sceneParticleField.hidden = false;
+    sceneSetAgentVisualActive(false);
   }
 
   function sceneHandleParticleError(event) {
-    if (!sceneVisualSlot || sceneState !== SCENE_STATE_COMPLETED) return;
-    sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
-    sceneVisualSlot.classList.add('is-particle-unavailable');
+    if (!sceneParticleField || sceneState !== SCENE_STATE_COMPLETED) return;
+    sceneParticleField.classList.remove('is-particle-ready', 'is-particle-loading');
+    sceneParticleField.classList.add('is-particle-unavailable');
+    document.body.classList.add('has-scene-field');
+    sceneParticleField.hidden = false;
     sceneSetAgentVisualActive(true);
     log('scene particle visual fail', String(event.detail && event.detail.error && event.detail.error.message || 'unknown error'));
   }
 
   function sceneHandleParticleActivity(event) {
-    if (sceneState !== SCENE_STATE_COMPLETED || !sceneVisualSlot || !sceneVisualSlot.classList.contains('is-particle-ready')) return;
+    var immersiveOpen = sceneParticleDialog && (sceneParticleDialog.open || sceneParticleDialog.hasAttribute('open'));
+    var fieldOpen = document.body.classList.contains('has-scene-field');
+    if ((!immersiveOpen && !fieldOpen) || sceneState !== SCENE_STATE_COMPLETED) return;
     sceneSetAgentVisualActive(!(event.detail && event.detail.active));
   }
 
@@ -4073,10 +4120,12 @@
   }
 
   async function sceneShowParticleImage(imageURL) {
-    if (!sceneParticleStage || !sceneVisualSlot || !imageURL) return;
+    if (!sceneParticleStage || !sceneParticleField || !imageURL) return;
     var requestVersion = ++sceneParticleRequestVersion;
-    sceneVisualSlot.classList.add('is-particle-loading');
-    sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-unavailable');
+    sceneParticleField.hidden = false;
+    document.body.classList.add('has-scene-field');
+    sceneParticleField.classList.add('is-particle-loading');
+    sceneParticleField.classList.remove('is-particle-ready', 'is-particle-unavailable');
     try {
       var module = await sceneLoadParticleModule();
       if (requestVersion !== sceneParticleRequestVersion || sceneState !== SCENE_STATE_COMPLETED || !sceneProject || sceneProject.image_url !== imageURL) return;
@@ -4087,15 +4136,17 @@
         sceneParticleStage.addEventListener('scene-particle-error', sceneHandleParticleError);
         sceneParticleStage.addEventListener('scene-particle-activity', sceneHandleParticleActivity);
       }
-      if (sceneParticleImageURL === imageURL && sceneVisualSlot.classList.contains('is-particle-ready')) return;
+      if (sceneParticleImageURL === imageURL && sceneParticleField.classList.contains('is-particle-ready')) return;
       sceneParticleImageURL = imageURL;
       await sceneParticleVisual.setImage(imageURL);
       if (requestVersion !== sceneParticleRequestVersion) return;
     } catch (error) {
       if (requestVersion !== sceneParticleRequestVersion || sceneState !== SCENE_STATE_COMPLETED) return;
       sceneParticleImageURL = '';
-      sceneVisualSlot.classList.remove('is-particle-ready', 'is-particle-loading');
-      sceneVisualSlot.classList.add('is-particle-unavailable');
+      sceneParticleField.classList.remove('is-particle-ready', 'is-particle-loading');
+      sceneParticleField.classList.add('is-particle-unavailable');
+      document.body.classList.add('has-scene-field');
+      sceneParticleField.hidden = false;
       sceneSetAgentVisualActive(true);
       log('scene particle visual unavailable', String(error && error.message || error));
     }
@@ -4422,14 +4473,54 @@
     sceneSetState(status);
   }
 
+  function sceneHasEssay(project) {
+    return !!(project && String(project.essay || '').trim());
+  }
+
+  function sceneFillEssay(container, text) {
+    if (!container) return;
+    container.textContent = '';
+    var value = String(text || '').trim();
+    if (!value) return;
+    value.split(/\n{2,}/).forEach(function (part) {
+      var paragraph = document.createElement('p');
+      paragraph.textContent = part.replace(/\s*\n\s*/g, '\n').trim();
+      if (paragraph.textContent) container.appendChild(paragraph);
+    });
+  }
+
   function sceneShowCompleted(project) {
     sceneProject = project;
+    var hasEssay = sceneHasEssay(project);
+    if (sceneStateCompleted) sceneStateCompleted.classList.toggle('has-essay', hasEssay);
+    if (sceneResultTitle) {
+      sceneResultTitle.textContent = hasEssay
+        ? (project.essay_title || t('sceneTitle'))
+        : t('sceneTitle');
+    }
     if (sceneDisclaimer) sceneDisclaimer.textContent = project.disclaimer || t('sceneDisclaimer');
-    if (sceneCaption) sceneCaption.textContent = project.caption || '';
+    if (sceneEssayBlock) sceneEssayBlock.hidden = !hasEssay;
+    if (hasEssay) {
+      sceneFillEssay(sceneEssay, project.essay);
+      if (sceneClosing) {
+        sceneClosing.textContent = project.closing || '';
+        sceneClosing.hidden = !String(project.closing || '').trim();
+      }
+    } else {
+      if (sceneEssay) sceneEssay.textContent = '';
+      if (sceneClosing) {
+        sceneClosing.textContent = '';
+        sceneClosing.hidden = true;
+      }
+    }
+    if (sceneCaption) {
+      sceneCaption.textContent = hasEssay ? '' : (project.caption || '');
+      sceneCaption.hidden = hasEssay || !String(project.caption || '').trim();
+    }
     if (sceneMicroAction) sceneMicroAction.textContent = project.micro_action || '';
     if (sceneImage) {
       sceneImage.src = project.image_url ? project.image_url : '';
-      sceneImage.alt = project.caption || t('sceneTitle');
+      sceneImage.alt = (hasEssay ? (project.closing || project.essay_title) : project.caption) || t('sceneTitle');
     }
     sceneSetState(SCENE_STATE_COMPLETED);
     if (project.image_url) sceneShowParticleImage(project.image_url).catch(function () {});
@@ -4454,14 +4545,14 @@
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'scene-history-item';
-      button.setAttribute('aria-label', item.caption || t('sceneTitle'));
+      button.setAttribute('aria-label', item.essay_title || item.caption || t('sceneTitle'));
       var thumb = document.createElement('img');
       thumb.src = item.image_url || '';
       thumb.alt = '';
       thumb.loading = 'lazy';
       var text = document.createElement('span');
       text.className = 'scene-history-caption';
-      text.textContent = item.caption || '';
+      text.textContent = item.essay_title || item.caption || '';
       button.appendChild(thumb);
       button.appendChild(text);
       button.onclick = function () {
@@ -4492,7 +4583,7 @@
     var project = sceneProject;
     if (!project) return;
     // Show the original candidates again; editing is allowed on completed
-    // scenes, and "生成这一帧" starts a new generation attempt on this scene.
+    // scenes, and generating starts a new attempt on this scene.
     sceneSelectedCandidateId = (project.selected_candidate && project.selected_candidate.id) || '';
     if (sceneSummaryInput) sceneSummaryInput.value = project.approved_summary || '';
     sceneRenderCandidates(project);
